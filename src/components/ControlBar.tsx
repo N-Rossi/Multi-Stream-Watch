@@ -1,27 +1,39 @@
 "use client";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { Layout } from "@/lib/types";
 
-const LAYOUTS: { id: Layout; label: string; title: string }[] = [
+const ThreeWayIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <rect x="1" y="1" width="12" height="12" rx="1" />
+    <line x1="7" y1="1" x2="7" y2="7" />
+    <line x1="1" y1="7" x2="13" y2="7" />
+  </svg>
+);
+
+const LAYOUTS: { id: Layout; label: ReactNode; title: string }[] = [
   { id: "single", label: "◻", title: "Single" },
   { id: "side-by-side", label: "◫", title: "Side by side" },
-  { id: "featured", label: "⊡", title: "Featured + 2" },
+  { id: "featured", label: <ThreeWayIcon />, title: "3-Way" },
   { id: "quad", label: "⊞", title: "Quad" },
 ];
 
 type Props = {
   layout: Layout;
+  showLabels: boolean;
   onLayoutChange: (l: Layout) => void;
   onAddUrl: (url: string) => void;
   onToggleFullscreen: () => void;
+  onToggleLabels: () => void;
   isFullscreen: boolean;
 };
 
 export default function ControlBar({
   layout,
+  showLabels,
   onLayoutChange,
   onAddUrl,
   onToggleFullscreen,
+  onToggleLabels,
   isFullscreen,
 }: Props) {
   const [url, setUrl] = useState("");
@@ -82,6 +94,22 @@ export default function ControlBar({
           </button>
         ))}
       </div>
+
+      <div className="w-px h-4 bg-line mx-1" />
+
+      {/* Labels toggle */}
+      <button
+        onClick={onToggleLabels}
+        title={showLabels ? "Hide labels (L)" : "Show labels (L)"}
+        className={[
+          "px-2 h-7 flex items-center text-[10px] font-mono rounded border transition-colors shrink-0",
+          showLabels
+            ? "bg-signal/15 border-signal text-signal"
+            : "border-line text-dim hover:text-text hover:border-signal",
+        ].join(" ")}
+      >
+        {showLabels ? "LABELS ON" : "LABELS OFF"}
+      </button>
 
       <div className="w-px h-4 bg-line mx-1" />
 

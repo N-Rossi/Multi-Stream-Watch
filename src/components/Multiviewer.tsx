@@ -11,7 +11,8 @@ import StreamCell from "./StreamCell";
 type State = {
   slots: (Slot | null)[];
   layout: Layout;
-  audioSlot: number | null; // index of cell with audio, null = all muted
+  audioSlot: number | null;
+  showLabels: boolean;
 };
 
 type Action =
@@ -19,7 +20,8 @@ type Action =
   | { type: "REMOVE"; index: number }
   | { type: "RENAME"; index: number; name: string }
   | { type: "SET_LAYOUT"; layout: Layout }
-  | { type: "SET_AUDIO_SLOT"; index: number };
+  | { type: "SET_AUDIO_SLOT"; index: number }
+  | { type: "TOGGLE_LABELS" };
 
 function makeSlot(url: string): Slot {
   const source = parseSource(url);
@@ -39,12 +41,10 @@ function reducer(state: State, action: Action): State {
           ? action.index
           : slots.findIndex((s) => s === null);
       if (idx === -1 || idx >= 4) return state;
-      const slot = makeSlot(action.url);
-      slots[idx] = slot;
-      // First real slot gets audio
-      const hasAudio = slots.some((s, i) => s !== null && i === state.audioSlot);
-      const audioSlot = hasAudio ? state.audioSlot : idx;
-      return { ...state, slots, audioSlot };
+      slots[idx] = makeSlot(action.url);
+      const hasAudio =
+        state.audioSlot !== null && slots[state.audioSlot] !== null;
+      return { ...state, slots, audioSlot: hasAudio ? state.audioSlot : idx };
     }
 
     case "REMOVE": {
@@ -54,7 +54,11 @@ function reducer(state: State, action: Action): State {
         state.audioSlot === action.index
           ? slots.findIndex((s) => s !== null)
           : state.audioSlot;
-      return { ...state, slots, audioSlot: audioSlot === -1 ? null : audioSlot };
+      return {
+        ...state,
+        slots,
+        audioSlot: audioSlot === -1 ? null : audioSlot,
+      };
     }
 
     case "RENAME": {
@@ -69,7 +73,10 @@ function reducer(state: State, action: Action): State {
       return { ...state, layout: action.layout };
 
     case "SET_AUDIO_SLOT":
-      return { ...state, audioSlot: action.index };
+      return { ...state, audioSlot: state.audioSlot === action.index ? null : action.index };
+
+    case "TOGGLE_LABELS":
+      return { ...state, showLabels: !state.showLabels };
 
     default:
       return state;
@@ -80,6 +87,7 @@ const initialState: State = {
   slots: [null, null, null, null],
   layout: "quad",
   audioSlot: null,
+  showLabels: true,
 };
 
 // ---- Layout CSS -----------------------------------------------------------
@@ -87,17 +95,19 @@ const initialState: State = {
 const LAYOUT_CLASSES: Record<Layout, string> = {
   single: "grid-cols-1 grid-rows-1",
   "side-by-side": "grid-cols-2 grid-rows-1",
-  featured: "grid-cols-2 grid-rows-2",
+  featured: "grid-cols-4 grid-rows-2",
   quad: "grid-cols-2 grid-rows-2",
 };
 
-// For "featured" layout: first cell spans 2 rows
 function cellClass(layout: Layout, index: number): string {
-  if (layout === "featured" && index === 0) return "row-span-2";
+  if (layout === "featured") {
+    // 3-way: two equal cells on top, one centered on the bottom
+    if (index === 2) return "col-start-2 col-span-2";
+    return "col-span-2";
+  }
   return "";
 }
 
-// How many cells to render per layout
 const LAYOUT_CELL_COUNT: Record<Layout, number> = {
   single: 1,
   "side-by-side": 2,
@@ -112,12 +122,13 @@ export default function Multiviewer() {
   const gridRef = useRef<HTMLDivElement>(null);
   const { isFullscreen, toggle: toggleFullscreen } = useFullscreen(gridRef);
 
-  // F key for fullscreen
+  // F key = fullscreen, L key = toggle labels
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       if (e.key === "f" || e.key === "F") toggleFullscreen();
+      if (e.key === "l" || e.key === "L") dispatch({ type: "TOGGLE_LABELS" });
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -131,21 +142,30 @@ export default function Multiviewer() {
     dispatch({ type: "ADD", url, index });
   }, []);
 
-  const handleRemove = useCallback((index: number) => {
-    dispatch({ type: "REMOVE", index });
-  }, []);
+  const handleRemove = useCallback(
+    (index: number) => dispatch({ type: "REMOVE", index }),
+    []
+  );
 
-  const handleRename = useCallback((index: number, name: string) => {
-    dispatch({ type: "RENAME", index, name });
-  }, []);
+  const handleRename = useCallback(
+    (index: number, name: string) => dispatch({ type: "RENAME", index, name }),
+    []
+  );
 
-  const handleSetAudioSlot = useCallback((index: number) => {
-    dispatch({ type: "SET_AUDIO_SLOT", index });
-  }, []);
+  const handleSetAudioSlot = useCallback(
+    (index: number) => dispatch({ type: "SET_AUDIO_SLOT", index }),
+    []
+  );
 
-  const handleLayoutChange = useCallback((layout: Layout) => {
-    dispatch({ type: "SET_LAYOUT", layout });
-  }, []);
+  const handleLayoutChange = useCallback(
+    (layout: Layout) => dispatch({ type: "SET_LAYOUT", layout }),
+    []
+  );
+
+  const handleToggleLabels = useCallback(
+    () => dispatch({ type: "TOGGLE_LABELS" }),
+    []
+  );
 
   const cellCount = LAYOUT_CELL_COUNT[state.layout];
 
@@ -154,20 +174,21 @@ export default function Multiviewer() {
       {!isFullscreen && (
         <ControlBar
           layout={state.layout}
+          showLabels={state.showLabels}
           onLayoutChange={handleLayoutChange}
           onAddUrl={handleAddUrl}
           onToggleFullscreen={toggleFullscreen}
+          onToggleLabels={handleToggleLabels}
           isFullscreen={isFullscreen}
         />
       )}
 
-      {/* Grid */}
       <div
         ref={gridRef}
         className={[
-          "flex-1 grid gap-px bg-bg overflow-hidden",
+          "flex-1 grid gap-px overflow-hidden",
+          isFullscreen ? "bg-black" : "bg-bg",
           LAYOUT_CLASSES[state.layout],
-          isFullscreen ? "bg-black" : "",
         ].join(" ")}
         style={{ minHeight: 0 }}
       >
@@ -177,14 +198,15 @@ export default function Multiviewer() {
             index={i}
             slot={state.slots[i] ?? null}
             isAudioSlot={state.audioSlot === i}
+            showLabels={state.showLabels}
             onAddUrl={handleAddUrlAtIndex}
             onRemove={handleRemove}
             onRename={handleRename}
             onSoloAudio={handleSetAudioSlot}
+            className={cellClass(state.layout, i)}
           />
         ))}
 
-        {/* Fullscreen overlay controls */}
         {isFullscreen && (
           <button
             onClick={toggleFullscreen}
