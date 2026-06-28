@@ -3,6 +3,7 @@ import { useReducer, useRef, useEffect, useCallback } from "react";
 import type { Slot, Layout } from "@/lib/types";
 import { parseSource } from "@/lib/parseSource";
 import { useFullscreen } from "@/hooks/useFullscreen";
+import { useTwitchAuth } from "@/hooks/useTwitchAuth";
 import ControlBar from "./ControlBar";
 import StreamCell from "./StreamCell";
 
@@ -121,6 +122,7 @@ export default function Multiviewer() {
   const [state, dispatch] = useReducer(reducer, initialState);
   const gridRef = useRef<HTMLDivElement>(null);
   const { isFullscreen, toggle: toggleFullscreen } = useFullscreen(gridRef);
+  const { token: twitchToken, username: twitchUsername, login: twitchLogin, logout: twitchLogout } = useTwitchAuth();
 
   // F key = fullscreen, L key = toggle labels
   useEffect(() => {
@@ -180,6 +182,9 @@ export default function Multiviewer() {
           onToggleFullscreen={toggleFullscreen}
           onToggleLabels={handleToggleLabels}
           isFullscreen={isFullscreen}
+          twitchUsername={twitchUsername}
+          onTwitchLogin={twitchLogin}
+          onTwitchLogout={twitchLogout}
         />
       )}
 
@@ -204,6 +209,7 @@ export default function Multiviewer() {
             onRename={handleRename}
             onSoloAudio={handleSetAudioSlot}
             className={cellClass(state.layout, i)}
+            twitchToken={twitchToken}
           />
         ))}
 

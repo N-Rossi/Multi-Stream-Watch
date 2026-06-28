@@ -25,6 +25,9 @@ type Props = {
   onToggleFullscreen: () => void;
   onToggleLabels: () => void;
   isFullscreen: boolean;
+  twitchUsername: string | null;
+  onTwitchLogin: () => void;
+  onTwitchLogout: () => void;
 };
 
 export default function ControlBar({
@@ -35,6 +38,9 @@ export default function ControlBar({
   onToggleFullscreen,
   onToggleLabels,
   isFullscreen,
+  twitchUsername,
+  onTwitchLogin,
+  onTwitchLogout,
 }: Props) {
   const [url, setUrl] = useState("");
 
@@ -110,6 +116,32 @@ export default function ControlBar({
       >
         {showLabels ? "LABELS ON" : "LABELS OFF"}
       </button>
+
+      <div className="w-px h-4 bg-line mx-1" />
+
+      {/* Twitch auth */}
+      {twitchUsername ? (
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="text-[10px] font-mono text-[#9146FF]">⬤</span>
+          <span className="text-[10px] font-mono text-dim truncate max-w-[80px]" title={twitchUsername}>
+            {twitchUsername}
+          </span>
+          <button
+            onClick={onTwitchLogout}
+            className="px-1.5 h-5 text-[9px] font-mono rounded border border-line text-dim hover:text-tally hover:border-tally transition-colors"
+          >
+            OUT
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={onTwitchLogin}
+          title="Log in with Twitch for ad-free viewing"
+          className="px-2 h-7 flex items-center gap-1.5 text-[10px] font-mono rounded border border-[#9146FF]/40 text-[#9146FF]/70 hover:text-[#9146FF] hover:border-[#9146FF] transition-colors shrink-0"
+        >
+          <span className="text-[8px]">⬤</span> TWITCH
+        </button>
+      )}
 
       <div className="w-px h-4 bg-line mx-1" />
 

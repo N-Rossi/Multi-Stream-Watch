@@ -61,6 +61,7 @@ type Props = {
   onRename: (index: number, name: string) => void;
   onSoloAudio: (index: number) => void;
   className?: string;
+  twitchToken: string | null;
 };
 
 export default function StreamCell({
@@ -73,6 +74,7 @@ export default function StreamCell({
   onRename,
   onSoloAudio,
   className,
+  twitchToken,
 }: Props) {
   const cellRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -144,6 +146,7 @@ export default function StreamCell({
           autoplay: true,
           muted,
           parent: [window.location.hostname],
+          ...(twitchToken ? { oauth_token: twitchToken } : {}),
         };
         if (source.type === "tw-channel") opts.channel = source.channel;
         if (source.type === "tw-vod") opts.video = source.videoId;
@@ -159,7 +162,7 @@ export default function StreamCell({
       const el = document.getElementById(twContainerId);
       if (el) el.innerHTML = "";
     };
-  }, [slot?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [slot?.id, twitchToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Mute control — NEVER rebuilds src, so streams never pause ─────────
   useEffect(() => {
