@@ -2,40 +2,7 @@
 import { useRef, useEffect, useState, useCallback, useLayoutEffect } from "react";
 import type { Slot, Platform } from "@/lib/types";
 import { buildEmbed } from "@/lib/buildEmbed";
-
-// ── Twitch Player JS API ───────────────────────────────────────────────────
-// Loaded once, shared across all cells. Lets us call player.setMuted()
-// without rebuilding the iframe src (which would pause the stream).
-
-interface TwitchPlayerInstance {
-  setMuted(muted: boolean): void;
-  getMuted(): boolean;
-  addEventListener(event: string, cb: () => void): void;
-}
-
-type TwitchPlayerCtor = (new (id: string, opts: Record<string, unknown>) => TwitchPlayerInstance) & {
-  PLAYING: string;
-};
-
-interface TwitchWindow extends Window {
-  Twitch?: { Player: TwitchPlayerCtor };
-}
-
-let twitchScriptPromise: Promise<void> | null = null;
-function loadTwitchScript(): Promise<void> {
-  if (!twitchScriptPromise) {
-    twitchScriptPromise = new Promise((resolve, reject) => {
-      if (typeof window === "undefined") { reject(); return; }
-      if ((window as TwitchWindow).Twitch?.Player) { resolve(); return; }
-      const s = document.createElement("script");
-      s.src = "https://player.twitch.tv/js/embed/v1.js";
-      s.onload = () => resolve();
-      s.onerror = () => { twitchScriptPromise = null; reject(); };
-      document.head.appendChild(s);
-    });
-  }
-  return twitchScriptPromise;
-}
+import { loadTwitchScript, getTwitchPlayer, type TwitchPlayerInstance } from "@/lib/twitch";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -138,8 +105,8 @@ export default function StreamCell({
     loadTwitchScript()
       .then(() => {
         if (cancelled) return;
-        const tw = (window as TwitchWindow).Twitch;
-        if (!tw || !document.getElementById(twContainerId)) return;
+        const Player = getTwitchPlayer();
+        if (!Player || !document.getElementById(twContainerId)) return;
 
         const opts: Record<string, unknown> = {
           width: "100%",
@@ -152,10 +119,10 @@ export default function StreamCell({
         if (source.type === "tw-channel") opts.channel = source.channel;
         if (source.type === "tw-vod") opts.video = source.videoId;
 
-        const player = new tw.Player(twContainerId, opts);
+        const player = new Player(twContainerId, opts);
         if (!cancelled) twitchPlayerRef.current = player;
         // Apply the real mute state once playback has started.
-        player.addEventListener(tw.Player.PLAYING, () => {
+        player.addEventListener(Player.PLAYING, () => {
           if (!cancelled) player.setMuted(muted);
         });
       })

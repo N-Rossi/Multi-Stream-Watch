@@ -102,3 +102,23 @@ export type Slot = {
   source: Source;
   label: string;
 };
+
+// ── Control / Viewer board model (two-surface operator workflow) ────────────
+// Distinct from the home Multiviewer's Layout/Slot above so that page keeps
+// working unchanged. The board is what control edits and pushes to the viewer.
+
+export type BoardLayout = 1 | 2 | 3 | 4 | 9;
+
+export type BoardSlot = {
+  id: string; // stable per position, e.g. "slot-1". Never changes for a position.
+  source: Source | null;
+  label: string; // racer / team name, shown as overlay on the viewer
+};
+
+export type BoardConfig = {
+  version: number; // increments on every push, for ordering and diffing
+  layout: BoardLayout;
+  slots: BoardSlot[]; // up to 9, ids slot-1..slot-9
+  focusedSlot: string | null; // slot id shown 1-up on the viewer, or null for grid
+  audioSlot: string | null; // slot id that has sound, or null for all muted
+};
