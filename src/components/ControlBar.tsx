@@ -10,6 +10,13 @@ const ThreeWayIcon = () => (
   </svg>
 );
 
+const DuoIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <rect x="1" y="4" width="5" height="6" rx="1" />
+    <rect x="8" y="4" width="5" height="6" rx="1" />
+  </svg>
+);
+
 const Grid9Icon = () => (
   <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
     <rect x="1" y="1" width="12" height="12" rx="1" />
@@ -22,7 +29,8 @@ const Grid9Icon = () => (
 
 const LAYOUTS: { id: Layout; label: ReactNode; title: string }[] = [
   { id: "single", label: "◻", title: "Single" },
-  { id: "side-by-side", label: "◫", title: "Side by side" },
+  { id: "side-by-side", label: "◫", title: "Two — full height" },
+  { id: "duo", label: <DuoIcon />, title: "Two — equal size" },
   { id: "featured", label: <ThreeWayIcon />, title: "3-Way" },
   { id: "quad", label: "⊞", title: "Quad" },
   { id: "grid9", label: <Grid9Icon />, title: "9 (3×3)" },

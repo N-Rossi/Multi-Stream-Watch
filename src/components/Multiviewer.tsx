@@ -98,6 +98,7 @@ const initialState: State = {
 const LAYOUT_CLASSES: Record<Layout, string> = {
   single: "grid-cols-1 grid-rows-1",
   "side-by-side": "grid-cols-2 grid-rows-1",
+  duo: "grid-cols-2 grid-rows-1",
   featured: "grid-cols-4 grid-rows-2",
   quad: "grid-cols-2 grid-rows-2",
   grid9: "grid-cols-3 grid-rows-3",
@@ -109,12 +110,16 @@ function cellClass(layout: Layout, index: number): string {
     if (index === 2) return "col-start-2 col-span-2";
     return "col-span-2";
   }
+  // duo: two cells the same size as a quad cell (half height), side by side
+  // and vertically centered — i.e. not stretched to full height.
+  if (layout === "duo") return "self-center h-1/2";
   return "";
 }
 
 const LAYOUT_CELL_COUNT: Record<Layout, number> = {
   single: 1,
   "side-by-side": 2,
+  duo: 2,
   featured: 3,
   quad: 4,
   grid9: 9,
@@ -201,7 +206,10 @@ export default function Multiviewer() {
         ].join(" ")}
         style={{ minHeight: 0 }}
       >
-        {Array.from({ length: cellCount }, (_, i) => (
+        {/* Always mount all slots; hide the ones outside the current layout
+            instead of unmounting them, so their players keep running and don't
+            need a manual replay when the grid grows again. */}
+        {Array.from({ length: MAX_SLOTS }, (_, i) => (
           <StreamCell
             key={i}
             index={i}
@@ -212,7 +220,10 @@ export default function Multiviewer() {
             onRemove={handleRemove}
             onRename={handleRename}
             onSoloAudio={handleSetAudioSlot}
-            className={cellClass(state.layout, i)}
+            className={[
+              cellClass(state.layout, i),
+              i >= cellCount ? "hidden" : "",
+            ].join(" ")}
             twitchToken={twitchToken}
           />
         ))}
