@@ -41,7 +41,7 @@ function reducer(state: State, action: Action): State {
         action.index !== undefined
           ? action.index
           : slots.findIndex((s) => s === null);
-      if (idx === -1 || idx >= 4) return state;
+      if (idx === -1 || idx >= MAX_SLOTS) return state;
       slots[idx] = makeSlot(action.url);
       const hasAudio =
         state.audioSlot !== null && slots[state.audioSlot] !== null;
@@ -84,8 +84,10 @@ function reducer(state: State, action: Action): State {
   }
 }
 
+const MAX_SLOTS = 9;
+
 const initialState: State = {
-  slots: [null, null, null, null],
+  slots: Array<Slot | null>(MAX_SLOTS).fill(null),
   layout: "quad",
   audioSlot: null,
   showLabels: true,
@@ -98,6 +100,7 @@ const LAYOUT_CLASSES: Record<Layout, string> = {
   "side-by-side": "grid-cols-2 grid-rows-1",
   featured: "grid-cols-4 grid-rows-2",
   quad: "grid-cols-2 grid-rows-2",
+  grid9: "grid-cols-3 grid-rows-3",
 };
 
 function cellClass(layout: Layout, index: number): string {
@@ -114,6 +117,7 @@ const LAYOUT_CELL_COUNT: Record<Layout, number> = {
   "side-by-side": 2,
   featured: 3,
   quad: 4,
+  grid9: 9,
 };
 
 // ---- Component ------------------------------------------------------------

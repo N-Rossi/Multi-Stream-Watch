@@ -1,6 +1,6 @@
 "use client";
 import { useRef, useEffect, useState, useCallback, useLayoutEffect } from "react";
-import type { Slot, Source, Platform } from "@/lib/types";
+import type { Slot, Platform } from "@/lib/types";
 import { buildEmbed } from "@/lib/buildEmbed";
 
 // ── Twitch Player JS API ───────────────────────────────────────────────────
@@ -41,13 +41,6 @@ const PLATFORM_COLORS: Record<Platform, string> = {
   bili: "#00AEEC",
   file: "#FFB224",
 };
-
-function getLiveBadge(source: Source): { text: string; live: boolean } | null {
-  if (source.type === "invalid" || source.type === "unsupported") return null;
-  return source.live
-    ? { text: "LIVE", live: true }
-    : { text: source.type === "hls" ? "HLS" : "VOD", live: false };
-}
 
 // ── Component ──────────────────────────────────────────────────────────────
 
@@ -229,7 +222,6 @@ export default function StreamCell({
 
   const embedConfig = source && !isTwitch ? buildEmbed(source, getEmbedOpts()) : null;
   const platform = source && source.type !== "invalid" && source.type !== "unsupported" ? source.platform : null;
-  const badge = source ? getLiveBadge(source) : null;
   const isBili = source?.type === "bili-live" || source?.type === "bili-video";
 
   // ── Render ─────────────────────────────────────────────────────────────
@@ -275,7 +267,7 @@ export default function StreamCell({
           <>
             <iframe
               ref={iframeRef}
-              src={iframeSrc}
+              src={iframeSrc || undefined}
               className="absolute inset-0 w-full h-full origin-center"
               style={{ transform: `scale(${coverScale})` }}
               allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
@@ -311,59 +303,53 @@ export default function StreamCell({
       {slot && (
         <div
           className={[
-            "absolute top-0 inset-x-0 z-20 flex items-center gap-2 px-2 py-1.5",
-            "bg-gradient-to-b from-black/75 via-black/30 to-transparent",
+            "absolute top-0 inset-x-0 z-20 flex items-start justify-between gap-2 px-2 py-2",
+            "bg-gradient-to-b from-black/70 via-black/25 to-transparent",
             "transition-opacity duration-150",
             showLabels ? "opacity-100" : "opacity-0 group-hover:opacity-100",
           ].join(" ")}
         >
-          {platform && (
-            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: PLATFORM_COLORS[platform] }} />
-          )}
-
+          {/* Name chip — broadcast lower-third style */}
           {editingName ? (
             <input
               autoFocus
-              className="flex-1 bg-transparent text-xs font-mono text-white border-b border-signal outline-none"
+              className="flex-1 min-w-0 bg-black/60 backdrop-blur-md rounded-md pl-2.5 pr-2 py-1 text-sm font-display font-semibold tracking-wide text-white border-l-[3px] border-signal outline-none"
               value={nameInput}
               onChange={(e) => setNameInput(e.target.value)}
               onBlur={commitRename}
               onKeyDown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") setEditingName(false); }}
             />
           ) : (
-            <span
-              className="flex-1 text-xs font-mono text-white truncate cursor-pointer select-none drop-shadow"
-              onDoubleClick={startRename}
-              title="Double-click to rename"
+            <div
+              className="flex items-center gap-2 min-w-0 rounded-md bg-black/55 backdrop-blur-md pl-2.5 pr-2 py-1 border-l-[3px] shadow-sm shadow-black/40"
+              style={{ borderLeftColor: platform ? PLATFORM_COLORS[platform] : "#79828D" }}
             >
-              {slot.label}
-            </span>
+              <span
+                className="text-sm font-display font-semibold tracking-wide text-white truncate cursor-pointer select-none leading-tight"
+                onDoubleClick={startRename}
+                title="Double-click to rename"
+              >
+                {slot.label}
+              </span>
+            </div>
           )}
 
-          {badge && (
-            <span className={[
-              "font-mono text-[10px] px-1 rounded shrink-0 leading-4",
-              badge.live ? "bg-tally text-white" : "bg-black/40 text-white/50 border border-white/10",
-            ].join(" ")}>
-              {badge.text}
-            </span>
-          )}
-
+          {/* Hover controls */}
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
             <button
               onClick={() => onSoloAudio(index)}
               title={isAudioSlot ? "Mute" : "Solo audio"}
               className={[
-                "px-1.5 py-0.5 text-[10px] font-mono rounded border transition-colors",
+                "px-1.5 py-1 text-[10px] font-mono rounded border backdrop-blur-md bg-black/40 transition-colors",
                 isAudioSlot ? "bg-tally/30 border-tally text-tally" : "border-white/25 text-white/60 hover:text-white hover:border-signal",
               ].join(" ")}
             >
               {isAudioSlot ? "MUTE" : "SOLO"}
             </button>
-            <button onClick={startRename} title="Rename" className="px-1.5 py-0.5 text-[10px] font-mono rounded border border-white/25 text-white/60 hover:text-white hover:border-signal transition-colors">
+            <button onClick={startRename} title="Rename" className="px-1.5 py-1 text-[10px] font-mono rounded border border-white/25 backdrop-blur-md bg-black/40 text-white/60 hover:text-white hover:border-signal transition-colors">
               REN
             </button>
-            <button onClick={() => onRemove(index)} title="Remove" className="px-1.5 py-0.5 text-[10px] font-mono rounded border border-white/25 text-white/60 hover:text-tally hover:border-tally transition-colors">
+            <button onClick={() => onRemove(index)} title="Remove" className="px-1.5 py-1 text-[10px] font-mono rounded border border-white/25 backdrop-blur-md bg-black/40 text-white/60 hover:text-tally hover:border-tally transition-colors">
               ✕
             </button>
           </div>

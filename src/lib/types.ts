@@ -95,7 +95,7 @@ export type Source =
   | UnsupportedSource
   | InvalidSource;
 
-export type Layout = "single" | "side-by-side" | "featured" | "quad";
+export type Layout = "single" | "side-by-side" | "featured" | "quad" | "grid9";
 
 export type Slot = {
   id: string;

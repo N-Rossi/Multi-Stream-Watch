@@ -10,11 +10,22 @@ const ThreeWayIcon = () => (
   </svg>
 );
 
+const Grid9Icon = () => (
+  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <rect x="1" y="1" width="12" height="12" rx="1" />
+    <line x1="5.33" y1="1" x2="5.33" y2="13" />
+    <line x1="8.67" y1="1" x2="8.67" y2="13" />
+    <line x1="1" y1="5.33" x2="13" y2="5.33" />
+    <line x1="1" y1="8.67" x2="13" y2="8.67" />
+  </svg>
+);
+
 const LAYOUTS: { id: Layout; label: ReactNode; title: string }[] = [
   { id: "single", label: "◻", title: "Single" },
   { id: "side-by-side", label: "◫", title: "Side by side" },
   { id: "featured", label: <ThreeWayIcon />, title: "3-Way" },
   { id: "quad", label: "⊞", title: "Quad" },
+  { id: "grid9", label: <Grid9Icon />, title: "9 (3×3)" },
 ];
 
 type Props = {
