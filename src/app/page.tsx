@@ -87,11 +87,11 @@ export default function Home() {
           <div className="flex flex-col gap-2.5 md:flex-1">
             <Chip color="bg-text/70">All-in-one</Chip>
             <h2 className="font-display font-bold text-xl uppercase tracking-wide text-text">
-              Solo watch
+              Single Screen
             </h2>
             <p className="text-[13px] text-dim leading-relaxed">
-              Everything in one window: paste URLs, pick a layout, solo the
-              audio you want. No pushing, no second screen — just watch.
+              Everything in one window: paste URLs, pick a layout, choose the
+              audio you want.
             </p>
           </div>
           <span className="shrink-0 text-[11px] font-display font-semibold uppercase tracking-[0.08em] text-text/80">
