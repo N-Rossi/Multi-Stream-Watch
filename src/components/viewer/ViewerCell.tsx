@@ -14,6 +14,7 @@ import { PLATFORM_COLORS } from "@/lib/platform";
 import {
   loadTwitchScript,
   getTwitchPlayer,
+  insistOnPlay,
   type TwitchPlayerInstance,
 } from "@/lib/twitch";
 
@@ -41,6 +42,10 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
   const twitchPlayerRef = useRef<TwitchPlayerInstance | null>(null);
 
   const [coverScale, setCoverScale] = useState(1);
+  // Twitch refuses to autoplay while any CSS transform sits on its iframe
+  // ("style visibility" check false-positives). Hold the cover-scale off
+  // until PLAYING fires, then zoom.
+  const [twPlaying, setTwPlaying] = useState(false);
 
   const isTwitch = source.type === "tw-channel" || source.type === "tw-vod";
 
@@ -128,6 +133,8 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
       return;
     }
     let cancelled = false;
+    let stopInsisting: (() => void) | undefined;
+    setTwPlaying(false);
     loadTwitchScript()
       .then(() => {
         if (cancelled) return;
@@ -144,8 +151,11 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
         if (source.type === "tw-vod") opts.video = source.videoId;
         const player = new Player(twId, opts);
         if (!cancelled) twitchPlayerRef.current = player;
+        stopInsisting = insistOnPlay(player);
         player.addEventListener(Player.PLAYING, () => {
           if (cancelled) return;
+          stopInsisting?.();
+          setTwPlaying(true);
           player.setMuted(muted);
           // 9-up is heavy; request a low quality where the platform allows it.
           if (lowQuality) {
@@ -162,6 +172,7 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
       });
     return () => {
       cancelled = true;
+      stopInsisting?.();
       twitchPlayerRef.current = null;
       const el = document.getElementById(twId);
       if (el) el.innerHTML = "";
@@ -200,7 +211,9 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
         {isTwitch ? (
           <div
             className="absolute inset-0 w-full h-full origin-center"
-            style={{ transform: `scale(${coverScale})` }}
+            style={{
+              transform: twPlaying ? `scale(${coverScale})` : undefined,
+            }}
           >
             <div id={twId} style={{ width: "100%", height: "100%" }} />
           </div>

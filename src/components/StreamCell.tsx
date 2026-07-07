@@ -2,7 +2,7 @@
 import { useRef, useEffect, useState, useCallback, useLayoutEffect } from "react";
 import type { Slot } from "@/lib/types";
 import { buildEmbed } from "@/lib/buildEmbed";
-import { loadTwitchScript, getTwitchPlayer, type TwitchPlayerInstance } from "@/lib/twitch";
+import { loadTwitchScript, getTwitchPlayer, insistOnPlay, type TwitchPlayerInstance } from "@/lib/twitch";
 import { PLATFORM_COLORS } from "@/lib/platform";
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -44,6 +44,10 @@ export default function StreamCell({
   const [urlInput, setUrlInput] = useState("");
   const [iframeSrc, setIframeSrc] = useState("");
   const [coverScale, setCoverScale] = useState(1);
+  // Twitch refuses to autoplay while any CSS transform sits on its iframe
+  // ("style visibility" check false-positives). Hold the cover-scale off
+  // until PLAYING fires, then zoom.
+  const [twPlaying, setTwPlaying] = useState(false);
 
   const muted = !isAudioSlot;
   const source = slot?.source;
@@ -92,6 +96,8 @@ export default function StreamCell({
     }
 
     let cancelled = false;
+    let stopInsisting: (() => void) | undefined;
+    setTwPlaying(false);
 
     loadTwitchScript()
       .then(() => {
@@ -112,15 +118,20 @@ export default function StreamCell({
 
         const player = new Player(twContainerId, opts);
         if (!cancelled) twitchPlayerRef.current = player;
+        stopInsisting = insistOnPlay(player);
         // Apply the real mute state once playback has started.
         player.addEventListener(Player.PLAYING, () => {
-          if (!cancelled) player.setMuted(muted);
+          if (cancelled) return;
+          stopInsisting?.();
+          setTwPlaying(true);
+          player.setMuted(muted);
         });
       })
       .catch(() => {/* script blocked — cell stays black */});
 
     return () => {
       cancelled = true;
+      stopInsisting?.();
       twitchPlayerRef.current = null;
       const el = document.getElementById(twContainerId);
       if (el) el.innerHTML = "";
@@ -237,7 +248,9 @@ export default function StreamCell({
              its iframe — keeping them separate prevents a removeChild mismatch. */
           <div
             className="absolute inset-0 w-full h-full origin-center"
-            style={{ transform: `scale(${coverScale})` }}
+            style={{
+              transform: twPlaying ? `scale(${coverScale})` : undefined,
+            }}
           >
             <div id={twContainerId} style={{ width: "100%", height: "100%" }} />
           </div>

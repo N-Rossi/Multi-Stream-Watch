@@ -7,7 +7,30 @@ export interface TwitchPlayerInstance {
   setMuted(muted: boolean): void;
   getMuted(): boolean;
   setQuality(quality: string): void;
+  play(): void;
+  isPaused(): boolean;
   addEventListener(event: string, cb: () => void): void;
+}
+
+/**
+ * Nag a freshly created player into starting. The embed advertises autoplay
+ * but can come up paused, and play() calls during its spin-up are silently
+ * dropped. Don't consult isPaused() here — it returns undefined until the
+ * player is initialized. Just keep calling play(); the caller's PLAYING
+ * listener invokes the returned stop function once playback really starts.
+ */
+export function insistOnPlay(player: TwitchPlayerInstance): () => void {
+  let tries = 0;
+  const timer = setInterval(() => {
+    tries += 1;
+    try {
+      player.play();
+    } catch {
+      /* player torn down mid-tick */
+    }
+    if (tries >= 20) clearInterval(timer); // stop nagging after ~15s
+  }, 750);
+  return () => clearInterval(timer);
 }
 
 export type TwitchPlayerCtor = (new (
@@ -15,6 +38,7 @@ export type TwitchPlayerCtor = (new (
   opts: Record<string, unknown>
 ) => TwitchPlayerInstance) & {
   PLAYING: string;
+  READY: string;
 };
 
 interface TwitchWindow extends Window {

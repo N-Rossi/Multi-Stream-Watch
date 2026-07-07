@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Barlow, Barlow_Semi_Condensed, IBM_Plex_Mono } from "next/font/google";
+import { SpeedInsights } from "@vercel/speed-insights/next"
 import "./globals.css";
 
 const barlow = Barlow({
@@ -35,6 +36,7 @@ export default function RootLayout({
       className={`${barlow.variable} ${barlowCondensed.variable} ${ibmPlexMono.variable} h-full`}
     >
       <body className="h-full font-sans antialiased">{children}</body>
+      <SpeedInsights />
     </html>
   );
 }
