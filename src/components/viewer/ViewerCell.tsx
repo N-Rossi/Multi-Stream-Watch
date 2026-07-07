@@ -189,7 +189,13 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
   }, [embedConfig]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div ref={cellRef} className="relative w-full h-full bg-black overflow-hidden">
+    <div
+      ref={cellRef}
+      className={[
+        "relative w-full h-full bg-black overflow-hidden border",
+        !muted ? "border-tally shadow-[inset_0_0_0_2px_#FF453A]" : "border-transparent",
+      ].join(" ")}
+    >
       <div className="absolute inset-0">
         {isTwitch ? (
           <div
@@ -229,11 +235,12 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
         )}
       </div>
 
-      {/* Label overlay — UMD strip: solid black, condensed caps, platform edge. */}
-      {label && (
+      {/* Label overlay — UMD strip: solid black, condensed caps, platform edge.
+          The audio slot gets a glowing tally dot (shown even with no label). */}
+      {(label || !muted) && (
         <div className="absolute bottom-2 left-2 z-10 pointer-events-none">
           <span
-            className="inline-block rounded-[2px] bg-black/85 border-l-[3px] pl-2 pr-2.5 py-0.5 text-xs font-display font-semibold uppercase tracking-wide text-white"
+            className="inline-flex items-center gap-2 rounded-[2px] bg-black/85 border-l-[3px] pl-2 pr-2.5 py-0.5 text-xs font-display font-semibold uppercase tracking-wide text-white"
             style={{
               borderLeftColor:
                 source.type !== "invalid" && source.type !== "unsupported"
@@ -242,6 +249,26 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
             }}
           >
             {label}
+            {!muted && (
+              <span className="flex items-center gap-1.5 shrink-0" title="Audio live">
+                <svg
+                  viewBox="0 0 16 16"
+                  className="w-3.5 h-3.5 text-tally"
+                  fill="currentColor"
+                  aria-label="Audio live"
+                >
+                  <path d="M8 2.5 4.5 5.5H2a.5.5 0 0 0-.5.5v4a.5.5 0 0 0 .5.5h2.5L8 13.5a.5.5 0 0 0 .8-.4V2.9a.5.5 0 0 0-.8-.4Z" />
+                  <path
+                    d="M10.8 5.2a4 4 0 0 1 0 5.6M12.8 3.2a6.8 6.8 0 0 1 0 9.6"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.4"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <span className="w-1.5 h-1.5 rounded-[1px] bg-tally shadow-[0_0_6px_#FF453A]" />
+              </span>
+            )}
           </span>
         </div>
       )}
