@@ -91,8 +91,19 @@ export function boardReducer(
     case "SET_LABEL":
       return { ...state, slots: withSlot(state, action.id, { label: action.label }) };
 
-    case "SET_LAYOUT":
-      return { ...state, layout: action.layout };
+    case "SET_LAYOUT": {
+      // If the audio slot falls outside the new layout it would keep sounding
+      // from a hidden cell on the viewer. Hand audio to the first visible
+      // populated slot instead. (Any populated slot within the first `layout`
+      // positions is also within the viewer's populated-slice view, so this
+      // rule is safe for both surfaces.)
+      const visible = state.slots.slice(0, action.layout);
+      let audioSlot = state.audioSlot;
+      if (audioSlot !== null && !visible.some((s) => s.id === audioSlot)) {
+        audioSlot = visible.find((s) => s.source !== null)?.id ?? null;
+      }
+      return { ...state, layout: action.layout, audioSlot };
+    }
 
     case "TOGGLE_FOCUS":
       return {

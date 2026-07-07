@@ -70,8 +70,20 @@ function reducer(state: State, action: Action): State {
       return { ...state, slots };
     }
 
-    case "SET_LAYOUT":
-      return { ...state, layout: action.layout };
+    case "SET_LAYOUT": {
+      // Hidden cells stay mounted (feeds keep playing), so audio on a slot
+      // outside the new layout would keep sounding from off-screen. Hand it
+      // to the first visible populated slot instead.
+      const count = LAYOUT_CELL_COUNT[action.layout];
+      let audioSlot = state.audioSlot;
+      if (audioSlot !== null && audioSlot >= count) {
+        const first = state.slots
+          .slice(0, count)
+          .findIndex((s) => s !== null);
+        audioSlot = first === -1 ? null : first;
+      }
+      return { ...state, layout: action.layout, audioSlot };
+    }
 
     case "SET_AUDIO_SLOT":
       return { ...state, audioSlot: state.audioSlot === action.index ? null : action.index };
