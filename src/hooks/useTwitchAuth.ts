@@ -7,6 +7,8 @@ import {
   storeToken,
   clearToken,
   fetchTwitchUser,
+  storeReturnPath,
+  takeReturnPath,
 } from "@/lib/twitchAuth";
 
 export type TwitchAuth = {
@@ -25,7 +27,15 @@ export function useTwitchAuth(): TwitchAuth {
     const hashToken = parseHashToken();
     if (hashToken) {
       storeToken(hashToken);
-      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      // Login started on another page (e.g. /control) — send the user back.
+      // That page restores the token from localStorage on mount.
+      const returnPath = takeReturnPath();
+      const herePath = window.location.pathname + window.location.search;
+      if (returnPath && returnPath !== herePath) {
+        window.location.replace(returnPath);
+        return;
+      }
+      window.history.replaceState(null, "", herePath);
       setToken(hashToken);
       fetchTwitchUser(hashToken).then((name) => setUsername(name));
       return;
@@ -45,7 +55,10 @@ export function useTwitchAuth(): TwitchAuth {
     });
   }, []);
 
-  const login = () => { window.location.href = buildLoginUrl(); };
+  const login = () => {
+    storeReturnPath(window.location.pathname + window.location.search);
+    window.location.href = buildLoginUrl();
+  };
 
   const logout = () => {
     clearToken();

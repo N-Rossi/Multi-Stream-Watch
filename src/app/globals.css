@@ -1,23 +1,25 @@
 @import "tailwindcss";
 
 @theme inline {
-  /* Background layers */
-  --color-bg: #0A0C0F;
-  --color-panel: #13171C;
-  --color-panel2: #1A1F26;
-  --color-line: #2A313A;
+  /* Chassis — warm neutral graphite, like powder-coated rack gear */
+  --color-bg: #141413;
+  --color-panel: #1c1c1a;
+  --color-panel2: #262521;
+  --color-line: #3a3833;
 
   /* Text */
-  --color-text: #E8EBEF;
-  --color-dim: #79828D;
+  --color-text: #edebe6;
+  --color-dim: #8f8c83;
 
-  /* Accents */
-  --color-tally: #FF453A;
-  --color-signal: #2DD4BF;
-  --color-amber: #FFB224;
+  /* Function colors — broadcast conventions. Color always means something:
+     red = on air, amber = engaged control / warning, green = in sync. */
+  --color-tally: #ff453a;
+  --color-amber: #ffb224;
+  --color-ok: #3fb950;
 
   /* Fonts */
-  --font-display: var(--font-space-grotesk);
+  --font-sans: var(--font-barlow);
+  --font-display: var(--font-barlow-cond);
   --font-mono: var(--font-ibm-plex-mono);
 }
 
@@ -29,8 +31,8 @@ html,
 body {
   height: 100%;
   margin: 0;
-  background: #0A0C0F;
-  color: #E8EBEF;
+  background: #141413;
+  color: #edebe6;
 }
 
 :fullscreen {
