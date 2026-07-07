@@ -10,6 +10,7 @@ import {
 } from "react";
 import type { Source } from "@/lib/types";
 import { buildEmbed } from "@/lib/buildEmbed";
+import { PLATFORM_COLORS } from "@/lib/platform";
 import {
   loadTwitchScript,
   getTwitchPlayer,
@@ -223,15 +224,23 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center px-4 text-center">
-            <span className="font-mono text-amber text-xs">{embedConfig.message}</span>
+            <span className="text-amber text-xs">{embedConfig.message}</span>
           </div>
         )}
       </div>
 
-      {/* Label overlay — small, semi-transparent, corner. Readable, unobtrusive. */}
+      {/* Label overlay — UMD strip: solid black, condensed caps, platform edge. */}
       {label && (
         <div className="absolute bottom-2 left-2 z-10 pointer-events-none">
-          <span className="inline-block rounded bg-black/55 backdrop-blur-sm px-2 py-0.5 text-xs font-display font-semibold tracking-wide text-white/90">
+          <span
+            className="inline-block rounded-[2px] bg-black/85 border-l-[3px] pl-2 pr-2.5 py-0.5 text-xs font-display font-semibold uppercase tracking-wide text-white"
+            style={{
+              borderLeftColor:
+                source.type !== "invalid" && source.type !== "unsupported"
+                  ? PLATFORM_COLORS[source.platform]
+                  : "#8F8C83",
+            }}
+          >
             {label}
           </span>
         </div>

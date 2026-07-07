@@ -101,7 +101,7 @@ export default function ControlPage() {
           ))}
         </div>
 
-        <p className="mt-4 text-[10px] font-mono text-dim/70 leading-relaxed">
+        <p className="mt-4 text-[11px] text-dim/80 leading-relaxed">
           Edits stay on control until you Push. The viewer keeps playing
           unchanged feeds across pushes — only feeds whose URL changed reload.
           {draft.layout === 9 &&

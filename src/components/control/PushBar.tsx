@@ -2,6 +2,7 @@
 
 // The "take". Push copies the draft to the viewer. Until then nothing the
 // operator does on control reaches the viewer (preview vs. program).
+// Status lamp follows switcher color code: amber = edited preview, green = in sync.
 
 type Props = {
   dirty: boolean;
@@ -25,24 +26,26 @@ export default function PushBar({
         disabled={!dirty}
         title="Publish the draft to the viewer"
         className={[
-          "px-4 py-1.5 text-xs font-mono font-semibold rounded transition",
+          "px-4 h-8 text-xs font-display font-bold uppercase tracking-[0.08em] rounded-[3px] transition",
           dirty
-            ? "bg-signal text-bg hover:brightness-110"
+            ? "bg-tally text-white hover:brightness-110"
             : "bg-panel2 text-dim border border-line cursor-default",
         ].join(" ")}
       >
-        PUSH TO VIEWER
+        Push to viewer
       </button>
 
       <div className="flex items-center gap-1.5">
         <span
           className={[
-            "w-2 h-2 rounded-full",
-            dirty ? "bg-amber animate-pulse" : "bg-signal",
+            "w-2 h-2 rounded-[1px]",
+            dirty
+              ? "bg-amber shadow-[0_0_6px_rgba(255,178,36,0.6)]"
+              : "bg-ok shadow-[0_0_6px_rgba(63,185,80,0.5)]",
           ].join(" ")}
         />
-        <span className="text-[10px] font-mono text-dim">
-          {dirty ? "UNPUSHED CHANGES" : "LIVE — IN SYNC"}
+        <span className="text-[11px] text-dim">
+          {dirty ? "Unpushed changes" : "In sync"}
         </span>
       </div>
 
@@ -51,13 +54,13 @@ export default function PushBar({
         disabled={!dirty}
         title="Discard draft edits and return to the live board"
         className={[
-          "px-2.5 py-1 text-[10px] font-mono rounded border transition-colors",
+          "px-2.5 h-7 text-[10px] font-display font-semibold uppercase tracking-[0.08em] rounded-[3px] border transition-colors",
           dirty
-            ? "border-line text-dim hover:text-text hover:border-signal"
+            ? "border-line bg-panel2 text-dim hover:text-text hover:border-dim"
             : "border-line text-dim/40 cursor-default",
         ].join(" ")}
       >
-        REVERT TO LIVE
+        Revert to live
       </button>
 
       <span className="ml-auto text-[10px] font-mono text-dim">v{version}</span>
@@ -65,9 +68,9 @@ export default function PushBar({
       <button
         onClick={onOpenViewer}
         title="Open the viewer window for this room"
-        className="px-2.5 py-1 text-[10px] font-mono rounded border border-line text-dim hover:text-text hover:border-signal transition-colors"
+        className="px-2.5 h-7 text-[10px] font-display font-semibold uppercase tracking-[0.08em] rounded-[3px] border border-line bg-panel2 text-dim hover:text-text hover:border-dim transition-colors"
       >
-        OPEN VIEWER ↗
+        Open viewer ↗
       </button>
     </div>
   );

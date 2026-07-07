@@ -1,18 +1,9 @@
 "use client";
 import { useRef, useEffect, useState, useCallback, useLayoutEffect } from "react";
-import type { Slot, Platform } from "@/lib/types";
+import type { Slot } from "@/lib/types";
 import { buildEmbed } from "@/lib/buildEmbed";
 import { loadTwitchScript, getTwitchPlayer, type TwitchPlayerInstance } from "@/lib/twitch";
-
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-const PLATFORM_COLORS: Record<Platform, string> = {
-  yt: "#FF0033",
-  tw: "#9146FF",
-  kick: "#53FC18",
-  bili: "#00AEEC",
-  file: "#FFB224",
-};
+import { PLATFORM_COLORS } from "@/lib/platform";
 
 // ── Component ──────────────────────────────────────────────────────────────
 
@@ -218,26 +209,26 @@ export default function StreamCell({
       ref={cellRef}
       className={[
         "relative bg-panel overflow-hidden group border",
-        isAudioSlot && slot ? "border-tally shadow-[0_0_0_2px_#FF453A]" : "border-line",
+        isAudioSlot && slot ? "border-tally shadow-[0_0_0_2px_#FF453A]" : "border-transparent",
         className ?? "",
       ].join(" ")}
     >
       {/* Full-bleed content */}
       <div className="absolute inset-0">
         {!slot ? (
-          /* Empty cell */
+          /* Empty cell — switcher input waiting for a source */
           <div className="flex flex-col items-center justify-center h-full gap-3 select-none">
-            <span className="font-mono text-5xl font-bold text-line">{index + 1}</span>
-            <span className="font-mono text-xs tracking-widest text-dim">NO SIGNAL</span>
+            <span className="font-display font-bold text-6xl leading-none text-line">{index + 1}</span>
+            <span className="font-display font-semibold text-[11px] tracking-[0.35em] text-dim">NO SIGNAL</span>
             <form onSubmit={handleAddUrl} className="flex gap-1 mt-2 px-4 w-full max-w-xs">
               <input
-                className="flex-1 bg-panel2 border border-line text-xs font-mono text-text px-2 py-1 rounded focus:outline-none focus:border-signal placeholder:text-dim"
+                className="flex-1 bg-panel2 border border-line text-xs font-mono text-text px-2 py-1 rounded-[3px] focus:outline-none focus:border-amber placeholder:text-dim"
                 placeholder="Paste URL…"
                 value={urlInput}
                 onChange={(e) => setUrlInput(e.target.value)}
               />
-              <button type="submit" className="px-2 py-1 text-xs font-mono bg-signal text-bg rounded hover:brightness-110 transition">
-                ADD
+              <button type="submit" className="px-2.5 py-1 text-[11px] font-display font-semibold uppercase tracking-[0.08em] rounded-[3px] border border-line bg-panel2 text-dim hover:text-text hover:border-dim transition-colors">
+                Add
               </button>
             </form>
           </div>
@@ -270,7 +261,7 @@ export default function StreamCell({
             />
             {isBili && (
               <div className="absolute bottom-0 inset-x-0 bg-amber/10 border-t border-amber/30 px-2 py-1 pointer-events-none z-10">
-                <span className="font-mono text-[10px] text-amber">
+                <span className="text-[11px] text-amber">
                   Bilibili may be blocked depending on region/referrer
                 </span>
               </div>
@@ -288,8 +279,8 @@ export default function StreamCell({
           />
         ) : embedConfig?.kind === "unsupported" ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center">
-            <span className="font-mono text-amber text-xs">UNSUPPORTED</span>
-            <span className="font-mono text-dim text-[11px]">{embedConfig.message}</span>
+            <span className="font-display font-semibold text-[11px] tracking-[0.35em] text-amber">UNSUPPORTED</span>
+            <span className="text-dim text-[11px]">{embedConfig.message}</span>
           </div>
         ) : null}
       </div>
@@ -304,11 +295,12 @@ export default function StreamCell({
             showLabels ? "opacity-100" : "opacity-0 group-hover:opacity-100",
           ].join(" ")}
         >
-          {/* Name chip — broadcast lower-third style */}
+          {/* Name strip — under-monitor display: solid black, condensed caps,
+              platform color edge, red lamp while this feed is on air */}
           {editingName ? (
             <input
               autoFocus
-              className="flex-1 min-w-0 bg-black/60 backdrop-blur-md rounded-md pl-2.5 pr-2 py-1 text-sm font-display font-semibold tracking-wide text-white border-l-[3px] border-signal outline-none"
+              className="flex-1 min-w-0 bg-black/85 rounded-[2px] pl-2.5 pr-2 py-1 text-sm font-display font-semibold tracking-wide text-white border-l-[3px] border-amber outline-none"
               value={nameInput}
               onChange={(e) => setNameInput(e.target.value)}
               onBlur={commitRename}
@@ -316,16 +308,22 @@ export default function StreamCell({
             />
           ) : (
             <div
-              className="flex items-center gap-2 min-w-0 rounded-md bg-black/55 backdrop-blur-md pl-2.5 pr-2 py-1 border-l-[3px] shadow-sm shadow-black/40"
-              style={{ borderLeftColor: platform ? PLATFORM_COLORS[platform] : "#79828D" }}
+              className="flex items-center gap-2 min-w-0 rounded-[2px] bg-black/85 pl-2.5 pr-2 py-1 border-l-[3px]"
+              style={{ borderLeftColor: platform ? PLATFORM_COLORS[platform] : "#8F8C83" }}
             >
               <span
-                className="text-sm font-display font-semibold tracking-wide text-white truncate cursor-pointer select-none leading-tight"
+                className="text-[13px] font-display font-semibold tracking-wide uppercase text-white truncate cursor-pointer select-none leading-tight"
                 onDoubleClick={startRename}
                 title="Double-click to rename"
               >
                 {slot.label}
               </span>
+              {isAudioSlot && (
+                <span
+                  className="w-1.5 h-1.5 shrink-0 rounded-[1px] bg-tally shadow-[0_0_6px_#FF453A]"
+                  title="On air"
+                />
+              )}
             </div>
           )}
 
@@ -335,16 +333,16 @@ export default function StreamCell({
               onClick={() => onSoloAudio(index)}
               title={isAudioSlot ? "Mute" : "Solo audio"}
               className={[
-                "px-1.5 py-1 text-[10px] font-mono rounded border backdrop-blur-md bg-black/40 transition-colors",
-                isAudioSlot ? "bg-tally/30 border-tally text-tally" : "border-white/25 text-white/60 hover:text-white hover:border-signal",
+                "px-2 py-1 text-[10px] font-display font-semibold uppercase tracking-[0.08em] rounded-[2px] border bg-black/70 transition-colors",
+                isAudioSlot ? "border-tally/70 text-tally" : "border-white/25 text-white/70 hover:text-white hover:border-white/60",
               ].join(" ")}
             >
-              {isAudioSlot ? "MUTE" : "SOLO"}
+              {isAudioSlot ? "Mute" : "Solo"}
             </button>
-            <button onClick={startRename} title="Rename" className="px-1.5 py-1 text-[10px] font-mono rounded border border-white/25 backdrop-blur-md bg-black/40 text-white/60 hover:text-white hover:border-signal transition-colors">
-              REN
+            <button onClick={startRename} title="Rename" className="px-2 py-1 text-[10px] font-display font-semibold uppercase tracking-[0.08em] rounded-[2px] border border-white/25 bg-black/70 text-white/70 hover:text-white hover:border-white/60 transition-colors">
+              Rename
             </button>
-            <button onClick={() => onRemove(index)} title="Remove" className="px-1.5 py-1 text-[10px] font-mono rounded border border-white/25 backdrop-blur-md bg-black/40 text-white/60 hover:text-tally hover:border-tally transition-colors">
+            <button onClick={() => onRemove(index)} title="Remove" className="px-2 py-1 text-[10px] font-display font-semibold rounded-[2px] border border-white/25 bg-black/70 text-white/70 hover:text-tally hover:border-tally/70 transition-colors">
               ✕
             </button>
           </div>

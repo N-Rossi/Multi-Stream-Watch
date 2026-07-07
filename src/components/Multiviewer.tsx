@@ -186,6 +186,7 @@ export default function Multiviewer() {
         <ControlBar
           layout={state.layout}
           showLabels={state.showLabels}
+          onAir={state.audioSlot !== null && state.slots[state.audioSlot] !== null}
           onLayoutChange={handleLayoutChange}
           onAddUrl={handleAddUrl}
           onToggleFullscreen={toggleFullscreen}
@@ -200,8 +201,7 @@ export default function Multiviewer() {
       <div
         ref={gridRef}
         className={[
-          "flex-1 grid gap-px overflow-hidden",
-          isFullscreen ? "bg-black" : "bg-bg",
+          "flex-1 grid gap-px overflow-hidden bg-black",
           LAYOUT_CLASSES[state.layout],
         ].join(" ")}
         style={{ minHeight: 0 }}
@@ -231,9 +231,9 @@ export default function Multiviewer() {
         {isFullscreen && (
           <button
             onClick={toggleFullscreen}
-            className="fixed top-2 right-2 z-50 px-2 py-1 text-xs font-mono bg-panel/80 border border-line text-dim hover:text-text rounded"
+            className="fixed top-2 right-2 z-50 px-2.5 py-1 text-[11px] font-display font-semibold uppercase tracking-[0.08em] bg-black/70 border border-line text-dim hover:text-text rounded-[3px]"
           >
-            EXIT FS
+            Exit fullscreen
           </button>
         )}
       </div>

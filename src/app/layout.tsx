@@ -1,11 +1,18 @@
 import type { Metadata } from "next";
-import { Space_Grotesk, IBM_Plex_Mono } from "next/font/google";
+import { Barlow, Barlow_Semi_Condensed, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 
-const spaceGrotesk = Space_Grotesk({
-  variable: "--font-space-grotesk",
+const barlow = Barlow({
+  variable: "--font-barlow",
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["400", "500", "600"],
+});
+
+const barlowCondensed = Barlow_Semi_Condensed({
+  variable: "--font-barlow-cond",
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+  style: ["normal", "italic"],
 });
 
 const ibmPlexMono = IBM_Plex_Mono({
@@ -16,7 +23,7 @@ const ibmPlexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: "Multiviewer",
-  description: "Multi-stream race board — watch up to 4 live streams at once",
+  description: "Multi-stream race board — watch up to 9 live streams at once",
 };
 
 export default function RootLayout({
@@ -25,9 +32,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${spaceGrotesk.variable} ${ibmPlexMono.variable} h-full`}
+      className={`${barlow.variable} ${barlowCondensed.variable} ${ibmPlexMono.variable} h-full`}
     >
-      <body className="h-full font-display antialiased">{children}</body>
+      <body className="h-full font-sans antialiased">{children}</body>
     </html>
   );
 }

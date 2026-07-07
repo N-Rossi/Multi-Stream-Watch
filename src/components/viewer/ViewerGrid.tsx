@@ -22,6 +22,9 @@ function cellPlacement(layout: BoardLayout, index: number): string {
     if (index === 2) return "col-start-2 col-span-2";
     return "col-span-2";
   }
+  // 2-up: half-height cells, vertically centered, so each keeps a widescreen
+  // shape instead of stretching into a tall vertical panel.
+  if (layout === 2) return "self-center h-1/2";
   return "";
 }
 

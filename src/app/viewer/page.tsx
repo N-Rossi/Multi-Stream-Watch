@@ -57,8 +57,8 @@ export default function ViewerPage() {
         <ViewerGrid config={published!} />
       ) : (
         <div className="w-full h-full flex flex-col items-center justify-center gap-3 select-none">
-          <span className="w-2.5 h-2.5 rounded-full bg-signal animate-pulse" />
-          <span className="font-mono text-xs tracking-widest text-dim">
+          <span className="w-2 h-2 rounded-[1px] bg-panel2 border border-line" />
+          <span className="font-display font-semibold text-[11px] tracking-[0.35em] text-dim">
             {ready ? "WAITING FOR CONTROL" : "…"}
           </span>
         </div>
@@ -69,9 +69,9 @@ export default function ViewerPage() {
         <button
           onClick={toggle}
           title="Fullscreen (F)"
-          className="absolute top-2 right-2 z-50 px-2 py-1 text-[10px] font-mono bg-black/50 border border-line text-dim hover:text-text rounded"
+          className="absolute top-2 right-2 z-50 px-2.5 py-1 text-[10px] font-display font-semibold uppercase tracking-[0.08em] bg-black/60 border border-line text-dim hover:text-text rounded-[3px]"
         >
-          ⛶ FULLSCREEN
+          Fullscreen
         </button>
       )}
     </div>

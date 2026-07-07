@@ -26,9 +26,8 @@ export default function ControlBar({ layout, room, onLayout, onAddUrl }: Props) 
 
   return (
     <header className="flex items-center gap-3 px-3 py-2 bg-panel border-b border-line shrink-0">
-      <div className="flex items-center gap-1.5 shrink-0">
-        <span className="w-2.5 h-2.5 rounded-full bg-signal" />
-        <span className="font-display text-sm font-semibold tracking-widest text-text uppercase">
+      <div className="flex items-center gap-2 shrink-0">
+        <span className="font-display italic font-bold text-sm tracking-wide text-text uppercase">
           Control
         </span>
         <span className="text-[10px] font-mono text-dim">/{room}</span>
@@ -38,16 +37,16 @@ export default function ControlBar({ layout, room, onLayout, onAddUrl }: Props) 
 
       <form onSubmit={submit} className="flex gap-1.5 flex-1 min-w-0">
         <input
-          className="flex-1 min-w-0 bg-panel2 border border-line text-xs font-mono text-text px-2 py-1 rounded focus:outline-none focus:border-signal placeholder:text-dim"
+          className="flex-1 min-w-0 bg-panel2 border border-line text-xs font-mono text-text px-2 py-1 rounded-[3px] focus:outline-none focus:border-amber placeholder:text-dim"
           placeholder="Paste YouTube / Twitch / Kick / Bilibili / .m3u8 URL → next empty slot…"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
         />
         <button
           type="submit"
-          className="px-3 py-1 text-xs font-mono font-semibold bg-signal text-bg rounded hover:brightness-110 transition shrink-0"
+          className="px-3 h-7 text-[11px] font-display font-semibold uppercase tracking-[0.08em] rounded-[3px] border border-line bg-panel2 text-text/80 hover:text-text hover:border-dim transition-colors shrink-0"
         >
-          ADD
+          Add
         </button>
       </form>
 
@@ -60,10 +59,10 @@ export default function ControlBar({ layout, room, onLayout, onAddUrl }: Props) 
             title={`${l}-up`}
             onClick={() => onLayout(l)}
             className={[
-              "w-7 h-7 flex items-center justify-center text-xs font-mono rounded border transition-colors",
+              "w-7 h-7 flex items-center justify-center text-xs font-display font-semibold rounded-[3px] border transition-colors",
               layout === l
-                ? "bg-signal/20 border-signal text-signal"
-                : "border-line text-dim hover:text-text hover:border-signal",
+                ? "border-amber/70 bg-amber/15 text-amber shadow-[inset_0_0_8px_rgba(255,178,36,0.18)]"
+                : "border-line bg-panel2 text-dim hover:text-text hover:border-dim",
             ].join(" ")}
           >
             {l}
