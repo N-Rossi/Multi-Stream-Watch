@@ -115,7 +115,7 @@ export default function ControlBar({
   return (
     <header className="flex items-center gap-3 px-3 py-2 bg-panel border-b border-line shrink-0">
       {/* Brand — the lamp is a real tally: lit red while any feed has audio */}
-      <div className="flex items-center gap-2 shrink-0">
+      <a href="/" title="Home" className="flex items-center gap-2 shrink-0">
         <span
           className={[
             "w-2 h-2 rounded-[1px]",
@@ -128,7 +128,27 @@ export default function ControlBar({
         <span className="font-display italic font-bold text-sm tracking-wide text-text uppercase">
           Multiviewer
         </span>
-      </div>
+      </a>
+
+      <div className="w-px h-4 bg-line mx-1" />
+
+      {/* Control room — the operator surface that pushes to /viewer */}
+      <a
+        href="/control"
+        title="Open the control room — build a board and push it to a viewer"
+        className={[BTN, "px-2.5 h-7 gap-1.5 text-[11px]", BTN_IDLE, "shrink-0"].join(" ")}
+      >
+        {frame(
+          <>
+            <rect x="1" y="1" width="12" height="12" rx="1" />
+            <line x1="1" y1="9" x2="13" y2="9" />
+            <circle cx="4" cy="11" r="0.5" fill="currentColor" />
+            <circle cx="7" cy="11" r="0.5" fill="currentColor" />
+            <circle cx="10" cy="11" r="0.5" fill="currentColor" />
+          </>
+        )}
+        Control
+      </a>
 
       <div className="w-px h-4 bg-line mx-1" />
 

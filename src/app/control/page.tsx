@@ -8,6 +8,7 @@ import {
   bumpForPublish,
 } from "@/lib/board";
 import { createSync, type ViewerSync } from "@/lib/sync";
+import { useTwitchAuth } from "@/hooks/useTwitchAuth";
 import ControlBar from "@/components/control/ControlBar";
 import PushBar from "@/components/control/PushBar";
 import SlotCard from "@/components/control/SlotCard";
@@ -21,6 +22,7 @@ export default function ControlPage() {
   const [published, setPublished] = useState<BoardConfig | null>(null);
   const [room, setRoom] = useState("default");
   const syncRef = useRef<ViewerSync | null>(null);
+  const twitch = useTwitchAuth();
 
   useEffect(() => {
     const r =
@@ -70,6 +72,9 @@ export default function ControlPage() {
           dispatch({ type: "SET_LAYOUT", layout })
         }
         onAddUrl={(url) => dispatch({ type: "ADD_URL", url })}
+        twitchUsername={twitch.username}
+        onTwitchLogin={twitch.login}
+        onTwitchLogout={twitch.logout}
       />
       <PushBar
         dirty={dirty}

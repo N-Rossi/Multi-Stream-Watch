@@ -3,17 +3,32 @@ import { useState } from "react";
 import type { BoardLayout } from "@/lib/types";
 import { LAYOUTS } from "@/lib/board";
 
-// Top bar for the control surface: brand, add-by-URL, and the 1/2/3/4/9 layout
-// selector. None of this reaches the viewer until Push.
+// Top bar for the control surface: brand, add-by-URL, the 1/2/3/4/9 layout
+// selector, and Twitch auth. None of this reaches the viewer until Push.
+
+const BTN =
+  "flex items-center justify-center rounded-[3px] border font-display font-semibold uppercase tracking-[0.08em] transition-colors";
+const BTN_IDLE = "border-line bg-panel2 text-dim hover:text-text hover:border-dim";
 
 type Props = {
   layout: BoardLayout;
   room: string;
   onLayout: (layout: BoardLayout) => void;
   onAddUrl: (url: string) => void;
+  twitchUsername: string | null;
+  onTwitchLogin: () => void;
+  onTwitchLogout: () => void;
 };
 
-export default function ControlBar({ layout, room, onLayout, onAddUrl }: Props) {
+export default function ControlBar({
+  layout,
+  room,
+  onLayout,
+  onAddUrl,
+  twitchUsername,
+  onTwitchLogin,
+  onTwitchLogout,
+}: Props) {
   const [url, setUrl] = useState("");
 
   const submit = (e: React.FormEvent) => {
@@ -31,6 +46,13 @@ export default function ControlBar({ layout, room, onLayout, onAddUrl }: Props) 
           Control
         </span>
         <span className="text-[10px] font-mono text-dim">/{room}</span>
+        <a
+          href="/"
+          title="Back to the Multiviewer"
+          className="text-[10px] font-display font-semibold uppercase tracking-[0.08em] text-dim hover:text-text transition-colors"
+        >
+          ← Home
+        </a>
       </div>
 
       <div className="w-px h-4 bg-line mx-1" />
@@ -69,6 +91,35 @@ export default function ControlBar({ layout, room, onLayout, onAddUrl }: Props) 
           </button>
         ))}
       </div>
+
+      <div className="w-px h-4 bg-line mx-1" />
+
+      {/* Twitch auth */}
+      {twitchUsername ? (
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="w-2 h-2 rounded-[1px] bg-[#9146FF] shrink-0" />
+          <span
+            className="text-[11px] text-dim truncate max-w-[80px]"
+            title={twitchUsername}
+          >
+            {twitchUsername}
+          </span>
+          <button
+            onClick={onTwitchLogout}
+            className={[BTN, "px-1.5 h-5 text-[9px]", BTN_IDLE, "hover:text-tally hover:border-tally"].join(" ")}
+          >
+            Log out
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={onTwitchLogin}
+          title="Log in with Twitch for ad-free viewing"
+          className={[BTN, "px-2.5 h-7 gap-1.5 text-[11px]", BTN_IDLE, "shrink-0"].join(" ")}
+        >
+          <span className="w-1.5 h-1.5 rounded-[1px] bg-[#9146FF]" /> Twitch
+        </button>
+      )}
     </header>
   );
 }
