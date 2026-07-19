@@ -110,7 +110,10 @@ export type Slot = {
 export type BoardLayout = 1 | 2 | 3 | 4 | 9;
 
 export type BoardSlot = {
-  id: string; // stable per position, e.g. "slot-1". Never changes for a position.
+  // Stable identity for the *cell*, e.g. "slot-1". On reorder the whole slot
+  // object (id included) moves to a new array position, so the id follows the
+  // stream — that's what lets the viewer reorder without remounting players.
+  id: string;
   source: Source | null;
   label: string; // racer / team name, shown as overlay on the viewer
 };
@@ -121,4 +124,15 @@ export type BoardConfig = {
   slots: BoardSlot[]; // up to 9, ids slot-1..slot-9
   focusedSlot: string | null; // slot id shown 1-up on the viewer, or null for grid
   audioSlot: string | null; // slot id that has sound, or null for all muted
+};
+
+// ── Roster (control-page bookmark list) ─────────────────────────────────────
+// Streamers you know will be live, saved before/during the event so they can
+// be dropped onto the board without re-pasting URLs. Persisted in localStorage,
+// independent of any room's board.
+
+export type RosterEntry = {
+  key: string; // canonical identity (lib/roster.ts sourceKey) — dedupe + drag payload
+  source: Source; // parsed and ready to place into a slot
+  label: string; // last label used for this streamer
 };

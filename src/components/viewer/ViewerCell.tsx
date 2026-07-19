@@ -81,16 +81,49 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
     return () => obs.disconnect();
   }, []);
 
-  // Apply a mute state through the running player's API — no reload.
-  // Honest exceptions:
-  //  - YouTube / Kick: postMessage mute command, seamless.
-  //  - Twitch: Twitch.Player.setMuted, seamless.
+  // A blocked unmute (no user gesture in this tab yet) pauses the player, and
+  // neither Twitch nor <video> ever auto-restarts a started-then-paused
+  // stream — one bad unmute used to leave the cell frozen with no way back.
+  // When that happens we fall back to muted-but-alive playback and set this
+  // flag so we don't retry in a loop; the next audio toggle clears it.
+  const unmuteBlockedRef = useRef(false);
+
+  // Apply a mute state through the running player's API — no reload — and
+  // revive the player if it's paused (blocked unmute, occlusion pause, etc.).
+  // Twitch's play() counts like a user play-click, so it both restarts and can
+  // carry sound. Honest exceptions:
+  //  - YouTube / Kick: postMessage mute command, seamless, no pause feedback
+  //    available cross-origin.
   //  - Bilibili: no mute API and no muted URL param, so audio can't be toggled
   //    after load — it plays at the embed's default. We never reload it.
   const applyMute = useCallback(
     (isMuted: boolean) => {
       if (isTwitch) {
-        twitchPlayerRef.current?.setMuted(isMuted);
+        const p = twitchPlayerRef.current;
+        if (!p) return;
+        try {
+          if (p.isPaused()) p.play();
+          if (!isMuted && unmuteBlockedRef.current) return; // stay muted-but-alive
+          p.setMuted(isMuted);
+          if (!isMuted) {
+            // If the unmute tripped the autoplay policy Twitch pauses the
+            // stream (and won't restart it on its own). Muted playback beats
+            // a frozen cell.
+            setTimeout(() => {
+              try {
+                if (p.isPaused()) {
+                  unmuteBlockedRef.current = true;
+                  p.setMuted(true);
+                  p.play();
+                }
+              } catch {
+                /* player torn down since */
+              }
+            }, 800);
+          }
+        } catch {
+          /* player torn down mid-call */
+        }
         return;
       }
       if (source.type === "yt-video" || source.type === "yt-channel") {
@@ -114,15 +147,46 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
         return;
       }
       const video = videoRef.current;
-      if (video) {
-        // Don't unmute before playback starts or the autoplay policy pauses it.
-        video.muted = !isMuted && video.paused ? true : isMuted;
+      if (!video) return;
+      if (isMuted) {
+        video.muted = true;
+        if (video.paused) video.play().catch(() => {});
+        return;
       }
+      if (unmuteBlockedRef.current) {
+        if (video.paused) video.play().catch(() => {});
+        return;
+      }
+      if (video.paused) {
+        // Restart muted first; onPlaying re-enters applyMute to try the unmute.
+        video.muted = true;
+        video.play().catch(() => {});
+        return;
+      }
+      video.muted = false;
+      setTimeout(() => {
+        // Autoplay policy rejected the unmute and paused the video — fall
+        // back to muted playback (one retry only, see unmuteBlockedRef).
+        if (video.paused) {
+          unmuteBlockedRef.current = true;
+          video.muted = true;
+          video.play().catch(() => {});
+        }
+      }, 400);
     },
     [isTwitch, source.type]
   );
 
+  // Refs so the Twitch PLAYING listener (bound once per player) always applies
+  // the CURRENT mute state — the old direct `muted` read was a stale closure
+  // from the render the player was created in.
+  const mutedRef = useRef(muted);
+  mutedRef.current = muted;
+  const applyMuteRef = useRef(applyMute);
+  applyMuteRef.current = applyMute;
+
   useEffect(() => {
+    unmuteBlockedRef.current = false; // each audio toggle earns a fresh attempt
     applyMute(muted);
   }, [muted, applyMute]);
 
@@ -156,7 +220,7 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
           if (cancelled) return;
           stopInsisting?.();
           setTwPlaying(true);
-          player.setMuted(muted);
+          applyMuteRef.current(mutedRef.current);
           // 9-up is heavy; request a low quality where the platform allows it.
           if (lowQuality) {
             try {

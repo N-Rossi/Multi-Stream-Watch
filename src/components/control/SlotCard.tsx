@@ -2,9 +2,15 @@
 import { useState } from "react";
 import type { BoardSlot, Platform } from "@/lib/types";
 import { PLATFORM_COLORS } from "@/lib/platform";
+import { DRAG_SLOT, DRAG_ROSTER } from "@/lib/roster";
 
 // Lightweight, NON-playing card. Control never decodes video — that would mean
 // every feed runs twice on one machine (brutal at 9-up). Just metadata + edits.
+//
+// Drag-and-drop: the header row of a populated card is the drag handle
+// (dragging the whole card would fight the label input). Any card — populated
+// or empty — is a drop target: dropping another card swaps the two positions,
+// dropping a roster chip puts that streamer here.
 
 function sourceName(slot: BoardSlot): string {
   const s = slot.source;
@@ -29,6 +35,8 @@ type Props = {
   onFocus: () => void;
   onAudio: () => void;
   onRemove: () => void;
+  onSwapFrom: (fromSlotId: string) => void; // another card dropped on this one
+  onRosterDrop: (rosterKey: string) => void; // roster chip dropped on this card
 };
 
 export default function SlotCard({
@@ -41,8 +49,11 @@ export default function SlotCard({
   onFocus,
   onAudio,
   onRemove,
+  onSwapFrom,
+  onRosterDrop,
 }: Props) {
   const [url, setUrl] = useState("");
+  const [dragOver, setDragOver] = useState(false);
   const platform = platformOf(slot);
   const name = sourceName(slot);
   const bad =
@@ -56,16 +67,68 @@ export default function SlotCard({
     }
   };
 
+  const acceptsDrag = (e: React.DragEvent) =>
+    e.dataTransfer.types.includes(DRAG_SLOT) ||
+    e.dataTransfer.types.includes(DRAG_ROSTER);
+
   return (
     <div
+      onDragOver={(e) => {
+        if (!acceptsDrag(e)) return;
+        e.preventDefault();
+        // Must stay within the drag's effectAllowed or the browser cancels
+        // the drop: slot drags are moves, roster drags are copies.
+        e.dataTransfer.dropEffect = e.dataTransfer.types.includes(DRAG_SLOT)
+          ? "move"
+          : "copy";
+        setDragOver(true);
+      }}
+      onDragLeave={(e) => {
+        // Ignore leave events caused by entering a child of this card.
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+          setDragOver(false);
+        }
+      }}
+      onDrop={(e) => {
+        setDragOver(false);
+        const fromId = e.dataTransfer.getData(DRAG_SLOT);
+        if (fromId) {
+          e.preventDefault();
+          if (fromId !== slot.id) onSwapFrom(fromId);
+          return;
+        }
+        const key = e.dataTransfer.getData(DRAG_ROSTER);
+        if (key) {
+          e.preventDefault();
+          onRosterDrop(key);
+        }
+      }}
       className={[
         "flex flex-col gap-2 rounded-[4px] border p-3 bg-panel transition-colors",
-        isFocused
-          ? "border-amber/70 shadow-[0_0_0_1px_rgba(255,178,36,0.4)]"
-          : "border-line",
+        dragOver
+          ? "border-amber shadow-[0_0_0_1px_rgba(255,178,36,0.6)]"
+          : isFocused
+            ? "border-amber/70 shadow-[0_0_0_1px_rgba(255,178,36,0.4)]"
+            : "border-line",
       ].join(" ")}
     >
-      <div className="flex items-center gap-2">
+      <div
+        draggable={slot.source !== null}
+        onDragStart={(e) => {
+          e.dataTransfer.setData(DRAG_SLOT, slot.id);
+          e.dataTransfer.effectAllowed = "move";
+        }}
+        title={slot.source ? "Drag onto another slot to swap positions" : undefined}
+        className={[
+          "flex items-center gap-2",
+          slot.source ? "cursor-grab active:cursor-grabbing" : "",
+        ].join(" ")}
+      >
+        {slot.source && (
+          <span aria-hidden className="text-[10px] text-dim/70 tracking-tighter select-none">
+            ⠿
+          </span>
+        )}
         <span className="font-display font-semibold text-[11px] text-dim w-4">
           {position}
         </span>

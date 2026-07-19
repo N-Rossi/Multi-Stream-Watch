@@ -1,26 +1,53 @@
 "use client";
-import { useEffect, useReducer, useRef, useState, useCallback } from "react";
-import type { BoardConfig, BoardLayout } from "@/lib/types";
+import {
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
+import type { BoardConfig, BoardLayout, RosterEntry, Source } from "@/lib/types";
 import {
   boardReducer,
   emptyBoard,
   boardsEqual,
   bumpForPublish,
+  labelFor,
 } from "@/lib/board";
+import { parseSource } from "@/lib/parseSource";
+import {
+  loadRoster,
+  saveRoster,
+  upsertEntry,
+  removeEntry,
+  sourceKey,
+} from "@/lib/roster";
 import { createSync, type ViewerSync } from "@/lib/sync";
 import { useTwitchAuth } from "@/hooks/useTwitchAuth";
 import ControlBar from "@/components/control/ControlBar";
 import PushBar from "@/components/control/PushBar";
 import SlotCard from "@/components/control/SlotCard";
+import RosterTray from "@/components/control/RosterTray";
 
 // Operator surface. Holds an editable DRAFT board. Nothing here reaches the
 // viewer until Push (the broadcast "take"). Control deliberately renders no
 // video — only lightweight metadata cards.
 
+/**
+ * Roster input accepts bare Twitch names ("dalek") as well as full URLs —
+ * staging a race roster is overwhelmingly a list of Twitch channels.
+ */
+function parseRosterInput(raw: string): Source {
+  const bareName = /^[A-Za-z0-9_]{2,25}$/.test(raw);
+  return parseSource(bareName ? `twitch.tv/${raw}` : raw);
+}
+
 export default function ControlPage() {
   const [draft, dispatch] = useReducer(boardReducer, undefined, emptyBoard);
   const [published, setPublished] = useState<BoardConfig | null>(null);
   const [room, setRoom] = useState("default");
+  const [roster, setRoster] = useState<RosterEntry[]>([]);
   const syncRef = useRef<ViewerSync | null>(null);
   const twitch = useTwitchAuth();
 
@@ -36,8 +63,111 @@ export default function ControlPage() {
       dispatch({ type: "LOAD", config: current });
       setPublished(current);
     }
+    setRoster(loadRoster());
     return () => sync.close();
   }, []);
+
+  const mutateRoster = useCallback(
+    (fn: (r: RosterEntry[]) => RosterEntry[]) => {
+      setRoster((prev) => {
+        const next = fn(prev);
+        if (next !== prev) saveRoster(next);
+        return next;
+      });
+    },
+    []
+  );
+
+  // Every stream that lands on the board is bookmarked, so anyone viewed this
+  // session can be re-added from the tray later without re-pasting the URL.
+  const captureToRoster = useCallback(
+    (source: Source, label: string) => {
+      mutateRoster((r) => upsertEntry(r, source, label));
+    },
+    [mutateRoster]
+  );
+
+  const handleAddUrl = useCallback(
+    (url: string) => {
+      const source = parseSource(url);
+      const label = labelFor(source);
+      dispatch({ type: "ADD_SOURCE", source, label });
+      captureToRoster(source, label);
+    },
+    [captureToRoster]
+  );
+
+  const handleSetSlotUrl = useCallback(
+    (id: string, url: string) => {
+      const source = parseSource(url);
+      const label = labelFor(source);
+      dispatch({ type: "SET_SLOT_SOURCE", id, source, label });
+      captureToRoster(source, label);
+    },
+    [captureToRoster]
+  );
+
+  // Slot label edits flow back into the matching bookmark, so the tray shows
+  // racer names instead of raw channel names.
+  const handleLabel = useCallback(
+    (id: string, label: string) => {
+      dispatch({ type: "SET_LABEL", id, label });
+      const source = draft.slots.find((s) => s.id === id)?.source;
+      const key = source ? sourceKey(source) : null;
+      if (key) {
+        mutateRoster((r) =>
+          r.map((e) => (e.key === key ? { ...e, label } : e))
+        );
+      }
+    },
+    [draft.slots, mutateRoster]
+  );
+
+  const handleRosterAdd = useCallback(
+    (raw: string): string | null => {
+      const source = parseRosterInput(raw);
+      if (source.type === "invalid" || source.type === "unsupported") {
+        return source.message;
+      }
+      mutateRoster((r) => upsertEntry(r, source, labelFor(source)));
+      return null;
+    },
+    [mutateRoster]
+  );
+
+  const placeFromRoster = useCallback(
+    (key: string, slotId: string | null) => {
+      const entry = roster.find((e) => e.key === key);
+      if (!entry) return;
+      const label = entry.label || labelFor(entry.source);
+      if (slotId) {
+        dispatch({ type: "SET_SLOT_SOURCE", id: slotId, source: entry.source, label });
+      } else {
+        dispatch({ type: "ADD_SOURCE", source: entry.source, label });
+      }
+    },
+    [roster]
+  );
+
+  // Card dragged into the tray: off the board, bookmark kept (re-captured in
+  // case it was never in the roster, e.g. loaded from a pre-roster board).
+  const handleSlotDroppedOnTray = useCallback(
+    (slotId: string) => {
+      const slot = draft.slots.find((s) => s.id === slotId);
+      if (slot?.source) captureToRoster(slot.source, slot.label);
+      dispatch({ type: "REMOVE_SLOT", id: slotId });
+    },
+    [draft.slots, captureToRoster]
+  );
+
+  const boardKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const s of draft.slots) {
+      const key = s.source ? sourceKey(s.source) : null;
+      if (key) keys.add(key);
+    }
+    return keys;
+  }, [draft.slots]);
 
   const baseline = published ?? emptyBoard();
   const dirty = !boardsEqual(draft, baseline);
@@ -71,7 +201,7 @@ export default function ControlPage() {
         onLayout={(layout: BoardLayout) =>
           dispatch({ type: "SET_LAYOUT", layout })
         }
-        onAddUrl={(url) => dispatch({ type: "ADD_URL", url })}
+        onAddUrl={handleAddUrl}
         twitchUsername={twitch.username}
         onTwitchLogin={twitch.login}
         onTwitchLogout={twitch.logout}
@@ -93,15 +223,15 @@ export default function ControlPage() {
               position={i + 1}
               isFocused={draft.focusedSlot === slot.id}
               isAudio={draft.audioSlot === slot.id}
-              onAddUrl={(url) =>
-                dispatch({ type: "SET_SLOT_URL", id: slot.id, url })
-              }
-              onLabel={(label) =>
-                dispatch({ type: "SET_LABEL", id: slot.id, label })
-              }
+              onAddUrl={(url) => handleSetSlotUrl(slot.id, url)}
+              onLabel={(label) => handleLabel(slot.id, label)}
               onFocus={() => dispatch({ type: "TOGGLE_FOCUS", id: slot.id })}
               onAudio={() => dispatch({ type: "TOGGLE_AUDIO", id: slot.id })}
               onRemove={() => dispatch({ type: "REMOVE_SLOT", id: slot.id })}
+              onSwapFrom={(fromId) =>
+                dispatch({ type: "MOVE_SLOT", from: fromId, to: slot.id })
+              }
+              onRosterDrop={(key) => placeFromRoster(key, slot.id)}
             />
           ))}
         </div>
@@ -109,10 +239,20 @@ export default function ControlPage() {
         <p className="mt-4 text-[11px] text-dim/80 leading-relaxed">
           Edits stay on control until you Push. The viewer keeps playing
           unchanged feeds across pushes — only feeds whose URL changed reload.
+          Reordering slots never reloads a feed.
           {draft.layout === 9 &&
             " 9-up runs 9 live players at once: heavy on CPU, GPU, and bandwidth."}
         </p>
       </div>
+
+      <RosterTray
+        roster={roster}
+        boardKeys={boardKeys}
+        onAdd={handleRosterAdd}
+        onPick={(key) => placeFromRoster(key, null)}
+        onRemoveEntry={(key) => mutateRoster((r) => removeEntry(r, key))}
+        onSlotDropped={handleSlotDroppedOnTray}
+      />
     </div>
   );
 }
