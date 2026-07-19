@@ -22,8 +22,10 @@ import {
 // and memoized, so cosmetic pushes (label, layout, focus, audio) never rebuild
 // it — the feed keeps playing. Only a changed `source` swaps the player.
 //
-// Reuses buildEmbed and the shared Twitch loader; mirrors the home StreamCell's
-// proven techniques (cover-scale, autoplay-muted-then-unmute, Twitch.Player).
+// Reuses buildEmbed and the shared Twitch loader. Twitch cells break from the
+// home StreamCell in two autoplay-critical ways (see comments below): the
+// label renders in a strip BELOW the video box (never overlapping the iframe)
+// and the cover-scale transform is never applied to Twitch.
 
 type Props = {
   source: Source;
@@ -42,10 +44,6 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
   const twitchPlayerRef = useRef<TwitchPlayerInstance | null>(null);
 
   const [coverScale, setCoverScale] = useState(1);
-  // Twitch refuses to autoplay while any CSS transform sits on its iframe
-  // ("style visibility" check false-positives). Hold the cover-scale off
-  // until PLAYING fires, then zoom.
-  const [twPlaying, setTwPlaying] = useState(false);
 
   const isTwitch = source.type === "tw-channel" || source.type === "tw-vod";
 
@@ -102,8 +100,6 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
         const p = twitchPlayerRef.current;
         if (!p) return;
         try {
-          // TEMP DIAG
-          console.log("[MSW]", twId, "applyMute", { isMuted, paused: p.isPaused(), blocked: unmuteBlockedRef.current, t: performance.now().toFixed(0) });
           if (p.isPaused()) p.play();
           if (!isMuted && unmuteBlockedRef.current) return; // stay muted-but-alive
           p.setMuted(isMuted);
@@ -114,8 +110,6 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
             setTimeout(() => {
               try {
                 if (p.isPaused()) {
-                  // TEMP DIAG
-                  console.warn("[MSW]", twId, "unmute PAUSED the player — falling back to muted", { t: performance.now().toFixed(0) });
                   unmuteBlockedRef.current = true;
                   p.setMuted(true);
                   p.play();
@@ -202,7 +196,6 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
     }
     let cancelled = false;
     let stopInsisting: (() => void) | undefined;
-    setTwPlaying(false);
     loadTwitchScript()
       .then(() => {
         if (cancelled) return;
@@ -220,20 +213,9 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
         const player = new Player(twId, opts);
         if (!cancelled) twitchPlayerRef.current = player;
         stopInsisting = insistOnPlay(player);
-        // TEMP DIAG — timestamp every lifecycle event so the pause moment can
-        // be correlated with what we do at PLAYING (transform, unmute, quality).
-        console.log("[MSW]", twId, "player created", { muted: mutedRef.current, t: performance.now().toFixed(0) });
-        player.addEventListener("play", () =>
-          console.log("[MSW]", twId, "event: play", { t: performance.now().toFixed(0) })
-        );
-        player.addEventListener("pause", () =>
-          console.warn("[MSW]", twId, "event: PAUSE", { t: performance.now().toFixed(0) })
-        );
         player.addEventListener(Player.PLAYING, () => {
           if (cancelled) return;
-          console.log("[MSW]", twId, "event: PLAYING → transform on, applyMute", { muted: mutedRef.current, t: performance.now().toFixed(0) }); // TEMP DIAG
           stopInsisting?.();
-          setTwPlaying(true);
           applyMuteRef.current(mutedRef.current);
           // 9-up is heavy; request a low quality where the platform allows it.
           if (lowQuality) {
@@ -290,18 +272,14 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
           cellRef sits here so cover-scale measures the actual video area. */}
       <div ref={cellRef} className="relative flex-1 min-h-0 overflow-hidden">
         {isTwitch ? (
-          <div
-            className="absolute inset-0 w-full h-full origin-center"
-            style={{
-              // TEMP EXPERIMENT: cover-scale disabled for Twitch. All cells
-              // paused at PLAYING — the instant this transform switches on and
-              // inflates the iframe's geometry under the label strip/adjacent
-              // cells (occlusion → Twitch pauses autoplay-started streams).
-              // Letterbox bars expected while testing.
-              // Restore: twPlaying ? `scale(${coverScale})` : undefined
-              transform: undefined,
-            }}
-          >
+          /* NO cover-scale on Twitch — ever. Twitch continuously polices
+             occlusion on autoplay-started streams: the instant a scale
+             transform inflates the iframe's geometry beyond its clip box
+             (under the label strip / adjacent cells) the stream is paused,
+             and a paused stream never auto-recovers. Proven live July 18 2026
+             — disabling this transform is what made autoplay stick. Twitch
+             letterboxes internally on a black cell, so the bars are subtle. */
+          <div className="absolute inset-0 w-full h-full">
             <div id={twId} style={{ width: "100%", height: "100%" }} />
           </div>
         ) : embedConfig.kind === "iframe" ? (

@@ -44,10 +44,6 @@ export default function StreamCell({
   const [urlInput, setUrlInput] = useState("");
   const [iframeSrc, setIframeSrc] = useState("");
   const [coverScale, setCoverScale] = useState(1);
-  // Twitch refuses to autoplay while any CSS transform sits on its iframe
-  // ("style visibility" check false-positives). Hold the cover-scale off
-  // until PLAYING fires, then zoom.
-  const [twPlaying, setTwPlaying] = useState(false);
 
   const muted = !isAudioSlot;
   const source = slot?.source;
@@ -97,7 +93,6 @@ export default function StreamCell({
 
     let cancelled = false;
     let stopInsisting: (() => void) | undefined;
-    setTwPlaying(false);
 
     loadTwitchScript()
       .then(() => {
@@ -123,7 +118,6 @@ export default function StreamCell({
         player.addEventListener(Player.PLAYING, () => {
           if (cancelled) return;
           stopInsisting?.();
-          setTwPlaying(true);
           player.setMuted(muted);
         });
       })
@@ -217,15 +211,79 @@ export default function StreamCell({
 
   return (
     <div
-      ref={cellRef}
       className={[
-        "relative bg-panel overflow-hidden group border",
-        isAudioSlot && slot ? "border-tally shadow-[0_0_0_2px_#FF453A]" : "border-transparent",
+        "relative bg-panel overflow-hidden group border flex flex-col",
+        // Inset tally shadow, NOT outward: an outward glow paints over the
+        // neighboring cells' iframes, and Twitch pauses/vetoes autoplay on any
+        // occlusion of its iframe.
+        isAudioSlot && slot ? "border-tally shadow-[inset_0_0_0_2px_#FF453A]" : "border-transparent",
         className ?? "",
       ].join(" ")}
     >
-      {/* Full-bleed content */}
-      <div className="absolute inset-0">
+      {/* Name/controls strip — ABOVE the video box, never overlapping it:
+          any element over the Twitch iframe vetoes autoplay and pauses a
+          playing stream. Same construction as ViewerCell's label strip. */}
+      {slot && (
+        <div
+          className="h-8 shrink-0 flex items-center justify-between gap-2 pr-2 bg-black border-l-[3px]"
+          style={{ borderLeftColor: platform ? PLATFORM_COLORS[platform] : "#8F8C83" }}
+        >
+          {editingName ? (
+            <input
+              autoFocus
+              className="flex-1 min-w-0 bg-black pl-2 py-1 text-sm font-display font-semibold tracking-wide text-white border-l-2 border-amber outline-none"
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") setEditingName(false); }}
+            />
+          ) : (
+            <div
+              className={[
+                "flex items-center gap-2 min-w-0 pl-2 transition-opacity duration-150",
+                showLabels ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+              ].join(" ")}
+            >
+              <span
+                className="text-[13px] font-display font-semibold tracking-wide uppercase text-white truncate cursor-pointer select-none leading-tight"
+                onDoubleClick={startRename}
+                title="Double-click to rename"
+              >
+                {slot.label}
+              </span>
+              {isAudioSlot && (
+                <span
+                  className="w-1.5 h-1.5 shrink-0 rounded-[1px] bg-tally shadow-[0_0_6px_#FF453A]"
+                  title="On air"
+                />
+              )}
+            </div>
+          )}
+
+          {/* Hover controls */}
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+            <button
+              onClick={() => onSoloAudio(index)}
+              title={isAudioSlot ? "Mute" : "Solo audio"}
+              className={[
+                "px-2 py-1 text-[10px] font-display font-semibold uppercase tracking-[0.08em] rounded-[2px] border bg-black/70 transition-colors",
+                isAudioSlot ? "border-tally/70 text-tally" : "border-white/25 text-white/70 hover:text-white hover:border-white/60",
+              ].join(" ")}
+            >
+              {isAudioSlot ? "Mute" : "Solo"}
+            </button>
+            <button onClick={startRename} title="Rename" className="px-2 py-1 text-[10px] font-display font-semibold uppercase tracking-[0.08em] rounded-[2px] border border-white/25 bg-black/70 text-white/70 hover:text-white hover:border-white/60 transition-colors">
+              Rename
+            </button>
+            <button onClick={() => onRemove(index)} title="Remove" className="px-2 py-1 text-[10px] font-display font-semibold rounded-[2px] border border-white/25 bg-black/70 text-white/70 hover:text-tally hover:border-tally/70 transition-colors">
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Video area (cellRef here so cover-scale measures the actual box) */}
+      <div ref={cellRef} className="relative flex-1 min-h-0 overflow-hidden">
         {!slot ? (
           /* Empty cell — switcher input waiting for a source */
           <div className="flex flex-col items-center justify-center h-full gap-3 select-none">
@@ -245,13 +303,12 @@ export default function StreamCell({
           </div>
         ) : isTwitch ? (
           /* Outer div is React-owned; Twitch.Player replaces the inner div with
-             its iframe — keeping them separate prevents a removeChild mismatch. */
-          <div
-            className="absolute inset-0 w-full h-full origin-center"
-            style={{
-              transform: twPlaying ? `scale(${coverScale})` : undefined,
-            }}
-          >
+             its iframe — keeping them separate prevents a removeChild mismatch.
+             NO cover-scale on Twitch — ever: scaling pushes the iframe's
+             geometry beyond its clip box (under the strip / adjacent cells),
+             which Twitch treats as occlusion and pauses autoplay-started
+             streams, never to recover (proven live July 18 2026). */
+          <div className="absolute inset-0 w-full h-full">
             <div id={twContainerId} style={{ width: "100%", height: "100%" }} />
           </div>
         ) : embedConfig?.kind === "iframe" ? (
@@ -298,69 +355,6 @@ export default function StreamCell({
         ) : null}
       </div>
 
-      {/* Label / controls overlay */}
-      {slot && (
-        <div
-          className={[
-            "absolute top-0 inset-x-0 z-20 flex items-start justify-between gap-2 px-2 py-2",
-            "bg-gradient-to-b from-black/70 via-black/25 to-transparent",
-            "transition-opacity duration-150",
-            showLabels ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-          ].join(" ")}
-        >
-          {/* Name strip — under-monitor display: solid black, condensed caps,
-              platform color edge, red lamp while this feed is on air */}
-          {editingName ? (
-            <input
-              autoFocus
-              className="flex-1 min-w-0 bg-black/85 rounded-[2px] pl-2.5 pr-2 py-1 text-sm font-display font-semibold tracking-wide text-white border-l-[3px] border-amber outline-none"
-              value={nameInput}
-              onChange={(e) => setNameInput(e.target.value)}
-              onBlur={commitRename}
-              onKeyDown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") setEditingName(false); }}
-            />
-          ) : (
-            <div
-              className="flex items-center gap-2 min-w-0 rounded-[2px] bg-black/85 pl-2.5 pr-2 py-1 border-l-[3px]"
-              style={{ borderLeftColor: platform ? PLATFORM_COLORS[platform] : "#8F8C83" }}
-            >
-              <span
-                className="text-[13px] font-display font-semibold tracking-wide uppercase text-white truncate cursor-pointer select-none leading-tight"
-                onDoubleClick={startRename}
-                title="Double-click to rename"
-              >
-                {slot.label}
-              </span>
-              {isAudioSlot && (
-                <span
-                  className="w-1.5 h-1.5 shrink-0 rounded-[1px] bg-tally shadow-[0_0_6px_#FF453A]"
-                  title="On air"
-                />
-              )}
-            </div>
-          )}
-
-          {/* Hover controls */}
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-            <button
-              onClick={() => onSoloAudio(index)}
-              title={isAudioSlot ? "Mute" : "Solo audio"}
-              className={[
-                "px-2 py-1 text-[10px] font-display font-semibold uppercase tracking-[0.08em] rounded-[2px] border bg-black/70 transition-colors",
-                isAudioSlot ? "border-tally/70 text-tally" : "border-white/25 text-white/70 hover:text-white hover:border-white/60",
-              ].join(" ")}
-            >
-              {isAudioSlot ? "Mute" : "Solo"}
-            </button>
-            <button onClick={startRename} title="Rename" className="px-2 py-1 text-[10px] font-display font-semibold uppercase tracking-[0.08em] rounded-[2px] border border-white/25 bg-black/70 text-white/70 hover:text-white hover:border-white/60 transition-colors">
-              Rename
-            </button>
-            <button onClick={() => onRemove(index)} title="Remove" className="px-2 py-1 text-[10px] font-display font-semibold rounded-[2px] border border-white/25 bg-black/70 text-white/70 hover:text-tally hover:border-tally/70 transition-colors">
-              ✕
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
