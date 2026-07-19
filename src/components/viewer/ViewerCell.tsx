@@ -102,6 +102,8 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
         const p = twitchPlayerRef.current;
         if (!p) return;
         try {
+          // TEMP DIAG
+          console.log("[MSW]", twId, "applyMute", { isMuted, paused: p.isPaused(), blocked: unmuteBlockedRef.current, t: performance.now().toFixed(0) });
           if (p.isPaused()) p.play();
           if (!isMuted && unmuteBlockedRef.current) return; // stay muted-but-alive
           p.setMuted(isMuted);
@@ -112,6 +114,8 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
             setTimeout(() => {
               try {
                 if (p.isPaused()) {
+                  // TEMP DIAG
+                  console.warn("[MSW]", twId, "unmute PAUSED the player — falling back to muted", { t: performance.now().toFixed(0) });
                   unmuteBlockedRef.current = true;
                   p.setMuted(true);
                   p.play();
@@ -216,8 +220,18 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
         const player = new Player(twId, opts);
         if (!cancelled) twitchPlayerRef.current = player;
         stopInsisting = insistOnPlay(player);
+        // TEMP DIAG — timestamp every lifecycle event so the pause moment can
+        // be correlated with what we do at PLAYING (transform, unmute, quality).
+        console.log("[MSW]", twId, "player created", { muted: mutedRef.current, t: performance.now().toFixed(0) });
+        player.addEventListener("play", () =>
+          console.log("[MSW]", twId, "event: play", { t: performance.now().toFixed(0) })
+        );
+        player.addEventListener("pause", () =>
+          console.warn("[MSW]", twId, "event: PAUSE", { t: performance.now().toFixed(0) })
+        );
         player.addEventListener(Player.PLAYING, () => {
           if (cancelled) return;
+          console.log("[MSW]", twId, "event: PLAYING → transform on, applyMute", { muted: mutedRef.current, t: performance.now().toFixed(0) }); // TEMP DIAG
           stopInsisting?.();
           setTwPlaying(true);
           applyMuteRef.current(mutedRef.current);
@@ -265,18 +279,27 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
 
   return (
     <div
-      ref={cellRef}
       className={[
-        "relative w-full h-full bg-black overflow-hidden border",
+        "relative w-full h-full bg-black overflow-hidden border flex flex-col",
         !muted ? "border-tally shadow-[inset_0_0_0_2px_#FF453A]" : "border-transparent",
       ].join(" ")}
     >
-      <div className="absolute inset-0">
+      {/* Video area. The label strip below is a SIBLING, not an overlay:
+          Twitch vetoes autoplay while any element overlaps its iframe (even a
+          pointer-events:none chip), so the label must never share this box.
+          cellRef sits here so cover-scale measures the actual video area. */}
+      <div ref={cellRef} className="relative flex-1 min-h-0 overflow-hidden">
         {isTwitch ? (
           <div
             className="absolute inset-0 w-full h-full origin-center"
             style={{
-              transform: twPlaying ? `scale(${coverScale})` : undefined,
+              // TEMP EXPERIMENT: cover-scale disabled for Twitch. All cells
+              // paused at PLAYING — the instant this transform switches on and
+              // inflates the iframe's geometry under the label strip/adjacent
+              // cells (occlusion → Twitch pauses autoplay-started streams).
+              // Letterbox bars expected while testing.
+              // Restore: twPlaying ? `scale(${coverScale})` : undefined
+              transform: undefined,
             }}
           >
             <div id={twId} style={{ width: "100%", height: "100%" }} />
@@ -312,41 +335,40 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
         )}
       </div>
 
-      {/* Label overlay — UMD strip: solid black, condensed caps, platform edge.
-          The audio slot gets a glowing tally dot (shown even with no label). */}
+      {/* Label strip — UMD look, but rendered BELOW the video box, never over
+          it (occlusion vetoes Twitch autoplay). The audio slot gets a glowing
+          tally dot (shown even with no label). */}
       {(label || !muted) && (
-        <div className="absolute bottom-2 left-2 z-10 pointer-events-none">
-          <span
-            className="inline-flex items-center gap-2 rounded-[2px] bg-black/85 border-l-[3px] pl-2 pr-2.5 py-0.5 text-xs font-display font-semibold uppercase tracking-wide text-white"
-            style={{
-              borderLeftColor:
-                source.type !== "invalid" && source.type !== "unsupported"
-                  ? PLATFORM_COLORS[source.platform]
-                  : "#8F8C83",
-            }}
-          >
-            {label}
-            {!muted && (
-              <span className="flex items-center gap-1.5 shrink-0" title="Audio live">
-                <svg
-                  viewBox="0 0 16 16"
-                  className="w-3.5 h-3.5 text-tally"
-                  fill="currentColor"
-                  aria-label="Audio live"
-                >
-                  <path d="M8 2.5 4.5 5.5H2a.5.5 0 0 0-.5.5v4a.5.5 0 0 0 .5.5h2.5L8 13.5a.5.5 0 0 0 .8-.4V2.9a.5.5 0 0 0-.8-.4Z" />
-                  <path
-                    d="M10.8 5.2a4 4 0 0 1 0 5.6M12.8 3.2a6.8 6.8 0 0 1 0 9.6"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.4"
-                    strokeLinecap="round"
-                  />
-                </svg>
-                <span className="w-1.5 h-1.5 rounded-[1px] bg-tally shadow-[0_0_6px_#FF453A]" />
-              </span>
-            )}
-          </span>
+        <div
+          className="h-6 shrink-0 flex items-center gap-2 bg-black border-l-[3px] pl-2 pr-2.5 text-xs font-display font-semibold uppercase tracking-wide text-white"
+          style={{
+            borderLeftColor:
+              source.type !== "invalid" && source.type !== "unsupported"
+                ? PLATFORM_COLORS[source.platform]
+                : "#8F8C83",
+          }}
+        >
+          <span className="truncate">{label}</span>
+          {!muted && (
+            <span className="flex items-center gap-1.5 shrink-0" title="Audio live">
+              <svg
+                viewBox="0 0 16 16"
+                className="w-3.5 h-3.5 text-tally"
+                fill="currentColor"
+                aria-label="Audio live"
+              >
+                <path d="M8 2.5 4.5 5.5H2a.5.5 0 0 0-.5.5v4a.5.5 0 0 0 .5.5h2.5L8 13.5a.5.5 0 0 0 .8-.4V2.9a.5.5 0 0 0-.8-.4Z" />
+                <path
+                  d="M10.8 5.2a4 4 0 0 1 0 5.6M12.8 3.2a6.8 6.8 0 0 1 0 9.6"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span className="w-1.5 h-1.5 rounded-[1px] bg-tally shadow-[0_0_6px_#FF453A]" />
+            </span>
+          )}
         </div>
       )}
     </div>
