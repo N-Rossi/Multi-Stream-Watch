@@ -8,7 +8,16 @@ export interface TwitchPlayerInstance {
   getMuted(): boolean;
   setQuality(quality: string): void;
   play(): void;
+  // WARNING: isPaused() LIES for policy-stopped players (verified live
+  // 2026-08-04 in real Chrome): a player whose start was vetoed — or that
+  // Twitch stopped for hiding/occlusion — shows the big play button frozen at
+  // t=0 while isPaused() returns false. Never use it to decide whether a
+  // player is actually healthy; measure getCurrentTime() progress instead.
   isPaused(): boolean;
+  /** Seconds into playback. The one honest health signal: a live player's
+      clock advances, a dead player's does not. Optional — older embed builds
+      may lack it. */
+  getCurrentTime?(): number;
   addEventListener(event: string, cb: () => void): void;
 }
 

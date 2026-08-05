@@ -48,6 +48,12 @@ export default function ViewerPage() {
 
   const hasContent = !!published?.slots.some((s) => s.source);
 
+  // Is a focused (1-up) stream on screen? Mirrors ViewerGrid's focusActive.
+  const focusActive =
+    !!published &&
+    published.focusedSlot !== null &&
+    published.slots.some((s) => s.id === published.focusedSlot && s.source);
+
   return (
     <div
       ref={rootRef}
@@ -64,8 +70,18 @@ export default function ViewerPage() {
         </div>
       )}
 
-      {/* One-time local fullscreen control; hides once fullscreen. */}
-      {!isFullscreen && (
+      {/* One-time local fullscreen control; hides once fullscreen.
+          ALSO hidden while a focused stream is up: the focused cell fills the
+          whole viewport, so this button would overlap its iframe — and any
+          overlap PAUSES a started Twitch stream, permanently (verified live
+          2026-08-04: focusing a playing Twitch feed in a windowed viewer froze
+          it; the pause then survives entering fullscreen). In grid mode the
+          button only overlaps the top-right cell's corner and operators
+          fullscreen before pushing, so the grid states keep the button — it is
+          the tab's click target for user activation, and removing it in those
+          states is what broke unmute recovery on 2026-07-31. F still works
+          while focused. */}
+      {!isFullscreen && !focusActive && (
         <button
           onClick={toggle}
           title="Fullscreen (F)"

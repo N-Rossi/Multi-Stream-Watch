@@ -67,19 +67,22 @@ export default function ViewerGrid({ config }: { config: BoardConfig }) {
   // Stable render order, independent of board order (see header comment).
   const ordered = [...populated].sort((a, b) => a.id.localeCompare(b.id));
 
+  // Focus is implemented INSIDE the grid — the focused cell spans every track
+  // while the others hide — rather than as an absolute overlay on a non-grid
+  // container. Verified live 2026-08-04 in real Chrome: a Twitch player whose
+  // cell was `absolute inset-0 z-10` in a plain container had its START
+  // permanently vetoed (fresh players sat on the play button; the identical
+  // player in a grid cell autoplayed seconds earlier). Twitch's requirements
+  // are opaque; staying a grid item keeps the iframe in the exact environment
+  // where starts provably work, and the rendered result is the same
+  // full-bleed frame.
   return (
-    <div
-      className={
-        focusActive
-          ? "relative w-full h-full bg-black"
-          : `grid w-full h-full gap-px bg-black ${GRID_CLASS[layout]}`
-      }
-    >
+    <div className={`grid w-full h-full gap-px bg-black ${GRID_CLASS[layout]}`}>
       {ordered.map((slot) => {
         const idx = visibleIndex.get(slot.id);
         const placement = focusActive
           ? slot.id === focusedSlot
-            ? "absolute inset-0 z-10"
+            ? "col-start-1 row-start-1 col-span-full row-span-full"
             : "hidden"
           : idx !== undefined
             ? (PLACEMENT[layout][idx] ?? "hidden")
