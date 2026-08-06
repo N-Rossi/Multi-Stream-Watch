@@ -9,7 +9,7 @@ import {
   memo,
 } from "react";
 import type { Source } from "@/lib/types";
-import { buildEmbed } from "@/lib/buildEmbed";
+import { buildEmbed, rebuildEmbedSrc } from "@/lib/buildEmbed";
 import { PLATFORM_COLORS } from "@/lib/platform";
 import {
   loadTwitchScript,
@@ -45,7 +45,11 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
 
   const [coverScale, setCoverScale] = useState(1);
 
+  // Clips are NOT part of isTwitch: Twitch.Player's JS API doesn't support
+  // clips, so they render as a plain iframe (clips.twitch.tv/embed) and skip
+  // the whole Player init / revive machinery.
   const isTwitch = source.type === "tw-channel" || source.type === "tw-vod";
+  const isTwClip = source.type === "tw-clip";
 
   // CRITICAL: every push delivers a freshly deserialized config, so `source` is
   // a new object reference even when its value is identical. Memoize on the
@@ -246,6 +250,20 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
         }
         return;
       }
+      if (source.type === "tw-clip") {
+        // The clips embed has no runtime API at all — the only mute control is
+        // the src's muted param, so a toggle reloads the iframe (the clip
+        // restarts from the top; clips are short, so this beats no audio
+        // control). Identical src → no-op, so mount/onLoad re-applies and the
+        // revive timers never cause a spurious reload.
+        const src = rebuildEmbedSrc(source, {
+          muted: isMuted,
+          hostname: window.location.hostname,
+        });
+        const el = iframeRef.current;
+        if (el && src && el.src !== src) el.src = src;
+        return;
+      }
       if (source.type === "yt-video" || source.type === "yt-channel") {
         iframeRef.current?.contentWindow?.postMessage(
           JSON.stringify({
@@ -294,7 +312,11 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
         }
       }, 400);
     },
-    [isTwitch, source.type]
+    // srcKey, not source: value-stable across cosmetic pushes (which deliver a
+    // fresh object), but changes when the source really changes — the clip
+    // branch closes over `source`, so swapping one clip for another must
+    // recreate this callback.
+    [isTwitch, srcKey] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // Refs so the Twitch PLAYING listener (bound once per player) always applies
@@ -474,7 +496,10 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
             ref={iframeRef}
             src={embedConfig.src}
             className="absolute inset-0 w-full h-full origin-center"
-            style={{ transform: `scale(${coverScale})` }}
+            /* Clips get NO cover-scale, same caution as the live player: it's
+               still a Twitch iframe, and inflating its geometry past the clip
+               box risks the same occlusion policing. It letterboxes on black. */
+            style={{ transform: isTwClip ? undefined : `scale(${coverScale})` }}
             allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
             allowFullScreen
             referrerPolicy="no-referrer-when-downgrade"

@@ -129,6 +129,9 @@ export default function ControlPage() {
       if (source.type === "invalid" || source.type === "unsupported") {
         return source.message;
       }
+      if (source.type === "tw-clip") {
+        return "Clips can't be saved to the roster — paste the URL into a slot instead.";
+      }
       mutateRoster((r) => upsertEntry(r, source, labelFor(source)));
       return null;
     },

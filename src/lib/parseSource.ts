@@ -95,11 +95,26 @@ export function parseSource(raw: string): Source {
     return { type: "invalid", message: `Unrecognised YouTube URL: "${raw}"` };
   }
 
+  // Twitch clips (dedicated host)
+  if (host === "clips.twitch.tv") {
+    const slug = path.slice(1).split("/")[0];
+    if (slug && slug !== "embed") {
+      return { type: "tw-clip", platform: "tw", clipId: slug, name: "Twitch Clip", live: false };
+    }
+    return { type: "invalid", message: `Unrecognised Twitch clip URL: "${raw}"` };
+  }
+
   // Twitch
   if (host === "twitch.tv") {
     const vodMatch = path.match(/^\/videos\/(\d+)/);
     if (vodMatch) {
       return { type: "tw-vod", platform: "tw", videoId: vodMatch[1], name: "Twitch VOD", live: false };
+    }
+    // /{channel}/clip/{slug} — must come before the channel fallback, which
+    // would otherwise read a clip URL as the channel itself.
+    const clipMatch = path.match(/^\/([^/]+)\/clip\/([^/?#]+)/);
+    if (clipMatch) {
+      return { type: "tw-clip", platform: "tw", clipId: clipMatch[2], name: `${clipMatch[1]} (clip)`, live: false };
     }
     const channel = path.slice(1).split("/")[0];
     if (channel && channel !== "videos") {
@@ -183,6 +198,28 @@ if (import.meta.vitest) {
       const s = parseSource("https://www.twitch.tv/videos/123456789");
       expect(s.type).toBe("tw-vod");
       if (s.type === "tw-vod") expect(s.videoId).toBe("123456789");
+    });
+
+    it("parses clips.twitch.tv clip", () => {
+      const s = parseSource("https://clips.twitch.tv/AwkwardHelplessSalamanderSwiftRage");
+      expect(s.type).toBe("tw-clip");
+      if (s.type === "tw-clip") expect(s.clipId).toBe("AwkwardHelplessSalamanderSwiftRage");
+    });
+
+    it("parses twitch.tv/{channel}/clip/{slug}", () => {
+      const s = parseSource(
+        "https://www.twitch.tv/ninja/clip/TameAthleticMarjoram-4hjJ2Kx?featured=false"
+      );
+      expect(s.type).toBe("tw-clip");
+      if (s.type === "tw-clip") {
+        expect(s.clipId).toBe("TameAthleticMarjoram-4hjJ2Kx");
+        expect(s.name).toBe("ninja (clip)");
+      }
+    });
+
+    it("still parses a channel URL with extra path as a channel", () => {
+      const s = parseSource("https://www.twitch.tv/ninja/videos");
+      expect(s.type).toBe("tw-channel");
     });
 
     it("parses kick channel", () => {

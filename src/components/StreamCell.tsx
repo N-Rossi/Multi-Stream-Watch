@@ -1,7 +1,7 @@
 "use client";
 import { useRef, useEffect, useState, useCallback, useLayoutEffect } from "react";
 import type { Slot } from "@/lib/types";
-import { buildEmbed } from "@/lib/buildEmbed";
+import { buildEmbed, rebuildEmbedSrc } from "@/lib/buildEmbed";
 import { loadTwitchScript, getTwitchPlayer, insistOnPlay, type TwitchPlayerInstance } from "@/lib/twitch";
 import { PLATFORM_COLORS } from "@/lib/platform";
 
@@ -47,7 +47,10 @@ export default function StreamCell({
 
   const muted = !isAudioSlot;
   const source = slot?.source;
+  // Clips are NOT isTwitch: Twitch.Player's JS API doesn't support clips, so
+  // they render as a plain iframe (clips.twitch.tv/embed).
   const isTwitch = source?.type === "tw-channel" || source?.type === "tw-vod";
+  const isTwClip = source?.type === "tw-clip";
 
   // Cover-scale: zoom iframe/player to fill cell (eliminates black bars)
   useLayoutEffect(() => {
@@ -143,6 +146,15 @@ export default function StreamCell({
       return;
     }
 
+    // Twitch clips: the embed has no runtime API — the only mute control is
+    // the src's muted param, so a toggle reloads the iframe (the clip restarts
+    // from the top; they're short). Identical src → no-op.
+    if (source.type === "tw-clip") {
+      const src = rebuildEmbedSrc(source, { ...getEmbedOpts(), muted: isMuted });
+      if (src) setIframeSrc((prev) => (prev === src ? prev : src));
+      return;
+    }
+
     // YouTube: postMessage to running iframe (no reload)
     if (source.type === "yt-video" || source.type === "yt-channel") {
       iframeRef.current?.contentWindow?.postMessage(
@@ -167,7 +179,7 @@ export default function StreamCell({
     if (video) {
       video.muted = !isMuted && video.paused ? true : isMuted;
     }
-  }, [source, isTwitch]);
+  }, [source, isTwitch, getEmbedOpts]);
 
   useEffect(() => {
     applyMute(muted);
@@ -317,7 +329,9 @@ export default function StreamCell({
               ref={iframeRef}
               src={iframeSrc || undefined}
               className="absolute inset-0 w-full h-full origin-center"
-              style={{ transform: `scale(${coverScale})` }}
+              /* Clips get NO cover-scale — still a Twitch iframe, same
+                 occlusion caution as the live player. Letterboxes on black. */
+              style={{ transform: isTwClip ? undefined : `scale(${coverScale})` }}
               allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
               allowFullScreen
               referrerPolicy="no-referrer-when-downgrade"

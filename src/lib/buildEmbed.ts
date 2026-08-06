@@ -70,6 +70,24 @@ export function buildEmbed(
       };
     }
 
+    case "tw-clip": {
+      // Clips use their own embed page, NOT the live player. Twitch.Player's
+      // JS API does not support clips, so there is no runtime mute/play
+      // control — mute changes require rebuilding this src (see applyMute in
+      // the cells).
+      const params = new URLSearchParams({
+        clip: source.clipId,
+        parent: hostname,
+        autoplay: "true",
+        muted: String(muted),
+      });
+      return {
+        kind: "iframe",
+        src: `https://clips.twitch.tv/embed?${params}`,
+        allowFullscreen: true,
+      };
+    }
+
     case "kick-channel": {
       const params = new URLSearchParams({
         autoplay: "true",

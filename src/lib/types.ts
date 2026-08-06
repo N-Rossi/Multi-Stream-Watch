@@ -32,6 +32,14 @@ export type TwitchVODSource = {
   live: false;
 };
 
+export type TwitchClipSource = {
+  type: "tw-clip";
+  platform: "tw";
+  clipId: string;
+  name: string;
+  live: false;
+};
+
 export type KickSource = {
   type: "kick-channel";
   platform: "kick";
@@ -87,6 +95,7 @@ export type Source =
   | YTChannelSource
   | TwitchChannelSource
   | TwitchVODSource
+  | TwitchClipSource
   | KickSource
   | BiliLiveSource
   | BiliVideoSource
