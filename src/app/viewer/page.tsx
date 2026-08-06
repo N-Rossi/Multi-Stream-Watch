@@ -48,12 +48,6 @@ export default function ViewerPage() {
 
   const hasContent = !!published?.slots.some((s) => s.source);
 
-  // Is a focused (1-up) stream on screen? Mirrors ViewerGrid's focusActive.
-  const focusActive =
-    !!published &&
-    published.focusedSlot !== null &&
-    published.slots.some((s) => s.id === published.focusedSlot && s.source);
-
   return (
     <div
       ref={rootRef}
@@ -70,18 +64,17 @@ export default function ViewerPage() {
         </div>
       )}
 
-      {/* One-time local fullscreen control; hides once fullscreen.
-          ALSO hidden while a focused stream is up: the focused cell fills the
-          whole viewport, so this button would overlap its iframe — and any
-          overlap PAUSES a started Twitch stream, permanently (verified live
-          2026-08-04: focusing a playing Twitch feed in a windowed viewer froze
-          it; the pause then survives entering fullscreen). In grid mode the
-          button only overlaps the top-right cell's corner and operators
-          fullscreen before pushing, so the grid states keep the button — it is
-          the tab's click target for user activation, and removing it in those
-          states is what broke unmute recovery on 2026-07-31. F still works
-          while focused. */}
-      {!isFullscreen && !focusActive && (
+      {/* One-time local fullscreen control — shown ONLY while the board is
+          empty. The moment content is up it must go: anything overlapping a
+          Twitch iframe vetoes fresh starts and pauses started streams, and
+          this button overlaps whichever cell owns the top-right corner in
+          EVERY layout — the single full-viewport cell at layout 1 (verified
+          live 2026-08-04: roster-drop into a Full board rendered a pure-black
+          never-created player until this button was hidden), the focused
+          cell, and the top-right cell of 2/3/4/9-up. Activation is not lost
+          by hiding it: any click anywhere in the window grants user
+          activation, and F toggles fullscreen at all times. */}
+      {!isFullscreen && !hasContent && (
         <button
           onClick={toggle}
           title="Fullscreen (F)"

@@ -72,6 +72,27 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
   // revive of last resort.
   const [twRebuild, setTwRebuild] = useState(0);
 
+  // Rebuild budget per source: a rebuild is a full stream reload, and a
+  // channel that is offline (or geo-blocked, or otherwise unplayable) will
+  // never reach PLAYING no matter how many times it is rebuilt — without a
+  // cap, the never-started watchdog would reload it forever. Two attempts,
+  // reset when the source changes or a player genuinely reaches PLAYING.
+  const rebuildBudgetRef = useRef(0);
+  useEffect(() => {
+    rebuildBudgetRef.current = 0;
+  }, [srcKey]);
+  const requestRebuild = useCallback(() => {
+    if (rebuildBudgetRef.current >= 2) return;
+    rebuildBudgetRef.current += 1;
+    // The rebuilt player must come back MUTED even if it holds the audio
+    // slot: unmuting a fresh player in a tab without activation is exactly
+    // the trap that killed its predecessor. The next audio toggle re-arms.
+    unmuteBlockedRef.current = true;
+    setTwRebuild((n) => n + 1);
+  }, []);
+  const requestRebuildRef = useRef(requestRebuild);
+  requestRebuildRef.current = requestRebuild;
+
   // Cover-scale: zoom the player to fill the cell (eliminates black bars).
   //
   // The observer ALSO drives revive-on-reveal (2026-08-04, the focus bug):
@@ -141,14 +162,7 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
           } catch {
             /* player torn down since */
           }
-          if (!alive) {
-            // The rebuilt player must come back MUTED even if it holds the
-            // audio slot: unmuting a fresh player in a tab without activation
-            // is exactly the trap that killed its predecessor. Muted playback
-            // first; the next audio toggle re-attempts sound.
-            unmuteBlockedRef.current = true;
-            setTwRebuild((n) => n + 1);
-          }
+          if (!alive) requestRebuildRef.current();
         }, 3800),
       ];
     });
@@ -305,6 +319,7 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
     }
     let cancelled = false;
     let stopInsisting: (() => void) | undefined;
+    let watchdog: number | undefined;
     loadTwitchScript()
       .then(() => {
         if (cancelled) return;
@@ -322,13 +337,29 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
         const player = new Player(twId, opts);
         if (!cancelled) twitchPlayerRef.current = player;
         stopInsisting = insistOnPlay(player);
+        let started = false;
+
+        // Never-started watchdog. A start that was vetoed at creation leaves
+        // a player that never fires PLAYING and never fires "pause" — no
+        // event-driven recovery can see it (verified live 2026-08-04:
+        // roster-drop into a Full-layout board, player loaded its poster and
+        // sat there). If PLAYING hasn't arrived after insistOnPlay's whole
+        // nag window and the cell is visible, rebuild (budgeted).
+        watchdog = window.setTimeout(() => {
+          if (cancelled || started) return;
+          const el = document.getElementById(twId);
+          if (!el || el.clientWidth === 0) return; // hidden — reveal handles it
+          requestRebuildRef.current();
+        }, 12000);
+
         // Policy pauses (occlusion, unmute-without-activation) arrive as plain
         // "pause" events, on THEIR schedule — observed anywhere from 170ms to
         // 6s after the trigger, which is why timer-based detection kept
         // missing them. Respond to the event itself: nothing in the viewer UI
         // pauses a player deliberately, so any pause while this cell is
-        // visible is unwanted → fall back to muted playback. Muted-but-alive
-        // beats frozen; the next audio toggle re-attempts sound.
+        // visible is unwanted → fall back to muted playback, then VERIFY the
+        // revival actually took (the play() can itself be swallowed) and
+        // escalate to a budgeted rebuild if the clock stays frozen.
         player.addEventListener("pause", () => {
           if (cancelled) return;
           const el = document.getElementById(twId);
@@ -342,9 +373,34 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
               /* torn down since */
             }
           }, 250);
+          let ta: number | undefined;
+          setTimeout(() => {
+            try {
+              ta = player.getCurrentTime?.();
+            } catch {
+              /* torn down */
+            }
+          }, 1800);
+          setTimeout(() => {
+            if (cancelled) return;
+            const cell = document.getElementById(twId);
+            if (!cell || cell.clientWidth === 0) return;
+            try {
+              const tb = player.getCurrentTime?.();
+              const revived =
+                typeof ta === "number" && typeof tb === "number"
+                  ? tb > ta + 0.05
+                  : true; // no clock API — assume the play() took
+              if (!revived) requestRebuildRef.current();
+            } catch {
+              /* torn down since */
+            }
+          }, 3400);
         });
         player.addEventListener(Player.PLAYING, () => {
           if (cancelled) return;
+          started = true;
+          rebuildBudgetRef.current = 0; // genuine playback: fresh budget
           stopInsisting?.();
           applyMuteRef.current(mutedRef.current);
           // 9-up is heavy; request a low quality where the platform allows it.
@@ -363,6 +419,7 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
     return () => {
       cancelled = true;
       stopInsisting?.();
+      if (watchdog !== undefined) clearTimeout(watchdog);
       twitchPlayerRef.current = null;
       const el = document.getElementById(twId);
       if (el) el.innerHTML = "";
