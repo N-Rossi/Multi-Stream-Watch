@@ -255,6 +255,7 @@ export default function ControlPage() {
         onPick={(key) => placeFromRoster(key, null)}
         onRemoveEntry={(key) => mutateRoster((r) => removeEntry(r, key))}
         onSlotDropped={handleSlotDroppedOnTray}
+        onClear={() => mutateRoster(() => [])}
       />
     </div>
   );
