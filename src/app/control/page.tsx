@@ -7,7 +7,13 @@ import {
   useState,
   useCallback,
 } from "react";
-import type { BoardConfig, BoardLayout, RosterEntry, Source } from "@/lib/types";
+import type {
+  BoardBookmark,
+  BoardConfig,
+  BoardLayout,
+  RosterEntry,
+  Source,
+} from "@/lib/types";
 import {
   boardReducer,
   emptyBoard,
@@ -23,10 +29,18 @@ import {
   removeEntry,
   sourceKey,
 } from "@/lib/roster";
+import {
+  loadBookmarks,
+  saveBookmarks,
+  upsertBookmark,
+  removeBookmark,
+  alignBookmarkToBoard,
+} from "@/lib/bookmarks";
 import { createSync, type ViewerSync } from "@/lib/sync";
 import { useTwitchAuth } from "@/hooks/useTwitchAuth";
 import ControlBar from "@/components/control/ControlBar";
 import PushBar from "@/components/control/PushBar";
+import BookmarkBar from "@/components/control/BookmarkBar";
 import SlotCard from "@/components/control/SlotCard";
 import RosterTray from "@/components/control/RosterTray";
 
@@ -48,6 +62,7 @@ export default function ControlPage() {
   const [published, setPublished] = useState<BoardConfig | null>(null);
   const [room, setRoom] = useState("default");
   const [roster, setRoster] = useState<RosterEntry[]>([]);
+  const [bookmarks, setBookmarks] = useState<BoardBookmark[]>([]);
   const syncRef = useRef<ViewerSync | null>(null);
   const twitch = useTwitchAuth();
 
@@ -64,6 +79,7 @@ export default function ControlPage() {
       setPublished(current);
     }
     setRoster(loadRoster());
+    setBookmarks(loadBookmarks());
     return () => sync.close();
   }, []);
 
@@ -186,6 +202,52 @@ export default function ControlPage() {
     dispatch({ type: "LOAD", config: published ?? emptyBoard() });
   }, [published]);
 
+  const handleSaveBookmark = useCallback(
+    (name: string): string | null => {
+      const res = upsertBookmark(bookmarks, name, draft);
+      if (res.error) return res.error;
+      setBookmarks(res.list);
+      saveBookmarks(res.list);
+      return null;
+    },
+    [bookmarks, draft]
+  );
+
+  const handleRemoveBookmark = useCallback((name: string) => {
+    setBookmarks((prev) => {
+      const next = removeBookmark(prev, name);
+      saveBookmarks(next);
+      return next;
+    });
+  }, []);
+
+  // Recall loads the snapshot into the DRAFT only — the viewer doesn't change
+  // until Push, like every other edit. Slot ids are aligned to the live board
+  // at recall time (streams playing in both keep their players untouched when
+  // the push lands — the viewer keys by slot id).
+  const handleRecallBookmark = useCallback(
+    (name: string) => {
+      const bm = bookmarks.find((b) => b.name === name);
+      if (!bm) return;
+      dispatch({
+        type: "LOAD",
+        config: alignBookmarkToBoard(bm.config, published),
+      });
+    },
+    [bookmarks, published]
+  );
+
+  // Which bookmark is live right now (for the chip highlight). Compared after
+  // alignment, since recall rewrites slot ids.
+  const activeBookmark = useMemo(() => {
+    if (!published) return null;
+    return (
+      bookmarks.find((b) =>
+        boardsEqual(alignBookmarkToBoard(b.config, published), published)
+      )?.name ?? null
+    );
+  }, [bookmarks, published]);
+
   const openViewer = useCallback(() => {
     window.open(
       `/viewer?room=${encodeURIComponent(room)}`,
@@ -215,6 +277,13 @@ export default function ControlPage() {
         onPush={handlePush}
         onRevert={handleRevert}
         onOpenViewer={openViewer}
+      />
+      <BookmarkBar
+        bookmarks={bookmarks}
+        activeName={activeBookmark}
+        onSave={handleSaveBookmark}
+        onRecall={handleRecallBookmark}
+        onRemove={handleRemoveBookmark}
       />
 
       <div className="flex-1 overflow-auto p-3">

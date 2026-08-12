@@ -140,6 +140,16 @@ export type BoardConfig = {
   audioSlot: string | null; // slot id that has sound, or null for all muted
 };
 
+// ── Bookmarks (saved board states) ──────────────────────────────────────────
+// Whole-board snapshots the operator can name and recall with one click (like
+// switcher scene presets): build a board, save it, build another, then jump
+// back. Persisted in localStorage, global across rooms, capped at 10.
+
+export type BoardBookmark = {
+  name: string; // user-chosen, unique case-insensitively (re-save = update)
+  config: BoardConfig; // snapshot; version is meaningless here (stored as 0)
+};
+
 // ── Roster (control-page bookmark list) ─────────────────────────────────────
 // Streamers you know will be live, saved before/during the event so they can
 // be dropped onto the board without re-pasting URLs. Persisted in localStorage,
