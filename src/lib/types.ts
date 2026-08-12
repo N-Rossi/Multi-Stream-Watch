@@ -125,6 +125,11 @@ export type BoardSlot = {
   id: string;
   source: Source | null;
   label: string; // racer / team name, shown as overlay on the viewer
+  // Race leader marker — crown on the viewer label. Any number of slots can
+  // lead at once (ties, team events), so it lives on the slot rather than as
+  // a single id on the board. Optional: boards persisted before this feature
+  // lack the field; absent = not leading.
+  lead?: boolean;
 };
 
 export type BoardConfig = {

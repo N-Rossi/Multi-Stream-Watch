@@ -94,6 +94,7 @@ export default function ViewerGrid({ config }: { config: BoardConfig }) {
               source={slot.source!}
               muted={slot.id !== audioSlot}
               label={slot.label}
+              lead={!!slot.lead}
               lowQuality={layout === 9}
               twId={`tw-viewer-${slot.id}`}
             />

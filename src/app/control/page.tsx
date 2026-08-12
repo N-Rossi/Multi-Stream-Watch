@@ -226,10 +226,12 @@ export default function ControlPage() {
               position={i + 1}
               isFocused={draft.focusedSlot === slot.id}
               isAudio={draft.audioSlot === slot.id}
+              isLead={!!slot.lead}
               onAddUrl={(url) => handleSetSlotUrl(slot.id, url)}
               onLabel={(label) => handleLabel(slot.id, label)}
               onFocus={() => dispatch({ type: "TOGGLE_FOCUS", id: slot.id })}
               onAudio={() => dispatch({ type: "TOGGLE_AUDIO", id: slot.id })}
+              onLead={() => dispatch({ type: "TOGGLE_LEAD", id: slot.id })}
               onRemove={() => dispatch({ type: "REMOVE_SLOT", id: slot.id })}
               onSwapFrom={(fromId) =>
                 dispatch({ type: "MOVE_SLOT", from: fromId, to: slot.id })

@@ -32,13 +32,15 @@ type Props = {
   source: Source;
   muted: boolean;
   label: string;
+  /** Race leader — yellow crown left of the name in the label strip. */
+  lead: boolean;
   /** At the 9-up layout, ask platforms for lower quality where possible. */
   lowQuality?: boolean;
   /** Stable DOM id for the Twitch.Player container (per slot). */
   twId: string;
 };
 
-function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
+function ViewerCellImpl({ source, muted, label, lead, lowQuality, twId }: Props) {
   const cellRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -549,17 +551,44 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
 
       {/* Label strip — UMD look, but rendered BELOW the video box, never over
           it (occlusion vetoes Twitch autoplay). The audio slot gets a glowing
-          tally dot (shown even with no label). */}
-      {(label || !muted) && (
-        <div
-          className="h-6 shrink-0 flex items-center gap-2 bg-black border-l-[3px] pl-2 pr-2.5 text-xs font-display font-semibold uppercase tracking-wide text-white"
-          style={{
-            borderLeftColor:
-              source.type !== "invalid" && source.type !== "unsupported"
-                ? PLATFORM_COLORS[source.platform]
-                : "#8F8C83",
-          }}
-        >
+          tally dot, the race leader a crown (both shown even with no label).
+          ALWAYS rendered, even empty: the strip appearing/disappearing resizes
+          the video box, and Twitch pauses a playing stream on ANY iframe
+          resize (same policing as the focus-resize, see the ResizeObserver
+          comment above). Reserving the row permanently makes label / audio /
+          crown pushes pure paint changes the player never notices. */}
+      <div
+        className="h-6 shrink-0 flex items-center gap-2 bg-black border-l-[3px] pl-2 pr-2.5 text-xs font-display font-semibold uppercase tracking-wide text-white"
+        style={{
+          borderLeftColor:
+            source.type !== "invalid" && source.type !== "unsupported"
+              ? PLATFORM_COLORS[source.platform]
+              : "#8F8C83",
+        }}
+      >
+          {/* Crown — ALWAYS mounted, toggled via `visibility` only, and NO
+              glow filter. Two hard-won constraints:
+              1. drop-shadow/box-shadow paint beyond the element's box; from
+                 this strip a 4px glow reaches into the Twitch iframe above,
+                 and Twitch treats painted-over pixels as occlusion → it
+                 vetoes play() PERSISTENTLY while the glow exists (streams
+                 froze the moment the crown appeared, and stayed frozen).
+              2. Toggling via visibility instead of mount/unmount means a
+                 crown push mutates one style attribute — no node insertion,
+                 no layout shift — the same paint class as a label text edit,
+                 which pushes have always done safely. */}
+          <svg
+            viewBox="0 0 16 16"
+            className="w-3.5 h-3.5 shrink-0 text-[#FFD60A]"
+            style={{ visibility: lead ? "visible" : "hidden" }}
+            fill="currentColor"
+            aria-label={lead ? "Race leader" : undefined}
+            aria-hidden={lead ? undefined : true}
+          >
+            <title>Race leader</title>
+            <path d="M2 4.5 5 7l3-4 3 4 3-2.5L12.6 11H3.4L2 4.5Z" />
+            <rect x="3.4" y="12" width="9.2" height="1.6" rx="0.4" />
+          </svg>
           <span className="truncate">{label}</span>
           {!muted && (
             <span className="flex items-center gap-1.5 shrink-0" title="Audio live">
@@ -581,8 +610,7 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
               <span className="w-1.5 h-1.5 rounded-[1px] bg-tally shadow-[0_0_6px_#FF453A]" />
             </span>
           )}
-        </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -595,6 +623,7 @@ const ViewerCell = memo(
   (a, b) =>
     a.muted === b.muted &&
     a.label === b.label &&
+    a.lead === b.lead &&
     a.lowQuality === b.lowQuality &&
     a.twId === b.twId &&
     JSON.stringify(a.source) === JSON.stringify(b.source)

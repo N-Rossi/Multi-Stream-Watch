@@ -1,3 +1,4 @@
+/// <reference types="vitest/importMeta" />
 import type { BoardConfig, BoardLayout, BoardSlot, Source } from "./types";
 
 // The control surface edits a *draft* BoardConfig through this reducer. Nothing
@@ -9,7 +10,7 @@ export const LAYOUTS: BoardLayout[] = [1, 2, 3, 4, 9];
 // All nine positions always exist with stable ids; layout only controls how
 // many are shown. An empty position has source === null.
 function emptySlot(i: number): BoardSlot {
-  return { id: `slot-${i + 1}`, source: null, label: "" };
+  return { id: `slot-${i + 1}`, source: null, label: "", lead: false };
 }
 
 export function emptyBoard(): BoardConfig {
@@ -38,6 +39,7 @@ export type BoardAction =
   | { type: "SET_LAYOUT"; layout: BoardLayout }
   | { type: "TOGGLE_FOCUS"; id: string }
   | { type: "TOGGLE_AUDIO"; id: string }
+  | { type: "TOGGLE_LEAD"; id: string } // race-leader crown; any number can be on
   | { type: "LOAD"; config: BoardConfig }; // replace draft (init / revert)
 
 function withSlot(
@@ -61,6 +63,7 @@ export function boardReducer(
       const slots = withSlot(state, target.id, {
         source: action.source,
         label: action.label,
+        lead: false,
       });
       // First populated slot on an all-muted board grabs audio by default.
       const audioSlot = state.audioSlot ?? target.id;
@@ -68,9 +71,11 @@ export function boardReducer(
     }
 
     case "SET_SLOT_SOURCE": {
+      // A different streamer lands here — the crown belonged to the old one.
       const slots = withSlot(state, action.id, {
         source: action.source,
         label: action.label,
+        lead: false,
       });
       const audioSlot = state.audioSlot ?? action.id;
       return { ...state, slots, audioSlot };
@@ -90,7 +95,11 @@ export function boardReducer(
     }
 
     case "REMOVE_SLOT": {
-      const slots = withSlot(state, action.id, { source: null, label: "" });
+      const slots = withSlot(state, action.id, {
+        source: null,
+        label: "",
+        lead: false,
+      });
       return {
         ...state,
         slots,
@@ -128,6 +137,14 @@ export function boardReducer(
         audioSlot: state.audioSlot === action.id ? null : action.id,
       };
 
+    case "TOGGLE_LEAD":
+      return {
+        ...state,
+        slots: state.slots.map((s) =>
+          s.id === action.id ? { ...s, lead: !s.lead } : s
+        ),
+      };
+
     case "LOAD":
       return action.config;
 
@@ -148,4 +165,60 @@ export function bumpForPublish(
 export function boardsEqual(a: BoardConfig, b: BoardConfig): boolean {
   const strip = (c: BoardConfig) => JSON.stringify({ ...c, version: 0 });
   return strip(a) === strip(b);
+}
+
+// --- tests (vitest) ---
+if (import.meta.vitest) {
+  const { describe, it, expect } = import.meta.vitest;
+
+  const src: Source = {
+    type: "tw-channel",
+    platform: "tw",
+    channel: "test",
+    name: "test",
+    live: true,
+  };
+
+  describe("boardReducer TOGGLE_LEAD", () => {
+    it("toggles lead on and off, allowing several at once", () => {
+      let b = emptyBoard();
+      b = boardReducer(b, { type: "ADD_SOURCE", source: src, label: "a" });
+      b = boardReducer(b, { type: "ADD_SOURCE", source: src, label: "b" });
+      b = boardReducer(b, { type: "TOGGLE_LEAD", id: "slot-1" });
+      b = boardReducer(b, { type: "TOGGLE_LEAD", id: "slot-2" });
+      expect(b.slots[0].lead).toBe(true);
+      expect(b.slots[1].lead).toBe(true);
+      b = boardReducer(b, { type: "TOGGLE_LEAD", id: "slot-1" });
+      expect(b.slots[0].lead).toBe(false);
+      expect(b.slots[1].lead).toBe(true);
+    });
+
+    it("clears lead when the slot is emptied or its stream replaced", () => {
+      let b = emptyBoard();
+      b = boardReducer(b, { type: "ADD_SOURCE", source: src, label: "a" });
+      b = boardReducer(b, { type: "TOGGLE_LEAD", id: "slot-1" });
+      b = boardReducer(b, { type: "REMOVE_SLOT", id: "slot-1" });
+      expect(b.slots[0].lead).toBe(false);
+
+      b = boardReducer(b, { type: "ADD_SOURCE", source: src, label: "a" });
+      b = boardReducer(b, { type: "TOGGLE_LEAD", id: "slot-1" });
+      b = boardReducer(b, {
+        type: "SET_SLOT_SOURCE",
+        id: "slot-1",
+        source: src,
+        label: "other",
+      });
+      expect(b.slots[0].lead).toBe(false);
+    });
+
+    it("lead travels with the stream on MOVE_SLOT", () => {
+      let b = emptyBoard();
+      b = boardReducer(b, { type: "ADD_SOURCE", source: src, label: "a" });
+      b = boardReducer(b, { type: "TOGGLE_LEAD", id: "slot-1" });
+      b = boardReducer(b, { type: "MOVE_SLOT", from: "slot-1", to: "slot-2" });
+      // The whole slot object (id + lead) moved to position 1.
+      expect(b.slots[1].id).toBe("slot-1");
+      expect(b.slots[1].lead).toBe(true);
+    });
+  });
 }
