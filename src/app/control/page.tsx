@@ -244,7 +244,8 @@ export default function ControlPage() {
         <p className="mt-4 text-[11px] text-dim/80 leading-relaxed">
           Edits stay on control until you Push. The viewer keeps playing
           unchanged feeds across pushes — only feeds whose URL changed reload.
-          Reordering slots never reloads a feed.
+          Reordering slots never reloads a feed. The viewer auto-packs: it
+          never shows empty cells, so 2 feeds on a 4-up board render 2-up.
           {draft.layout === 9 &&
             " 9-up runs 9 live players at once: heavy on CPU, GPU, and bandwidth."}
         </p>

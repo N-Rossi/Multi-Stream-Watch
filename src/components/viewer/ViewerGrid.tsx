@@ -1,5 +1,6 @@
 "use client";
 import type { BoardConfig, BoardLayout } from "@/lib/types";
+import { fitLayout } from "@/lib/board";
 import ViewerCell from "./ViewerCell";
 
 // Reconciling renderer. Every populated slot is mounted exactly once, keyed by
@@ -64,6 +65,14 @@ export default function ViewerGrid({ config }: { config: BoardConfig }) {
   const focusActive =
     focusedSlot !== null && populated.some((s) => s.id === focusedSlot);
 
+  // Auto-fit: render the tightest layout that holds the visible feeds, so an
+  // operator who drops from 4 feeds to 2 without touching the layout buttons
+  // gets the 2-up look instead of two feeds rattling around a 4-up grid. The
+  // chosen layout still caps how many feeds are visible (the slice above);
+  // this only ever shrinks the grid, and it's pure CSS — same cells, same DOM
+  // order, no remounts.
+  const effectiveLayout = fitLayout(visible.length);
+
   // Stable render order, independent of board order (see header comment).
   const ordered = [...populated].sort((a, b) => a.id.localeCompare(b.id));
 
@@ -77,7 +86,9 @@ export default function ViewerGrid({ config }: { config: BoardConfig }) {
   // where starts provably work, and the rendered result is the same
   // full-bleed frame.
   return (
-    <div className={`grid w-full h-full gap-px bg-black ${GRID_CLASS[layout]}`}>
+    <div
+      className={`grid w-full h-full gap-px bg-black ${GRID_CLASS[effectiveLayout]}`}
+    >
       {ordered.map((slot) => {
         const idx = visibleIndex.get(slot.id);
         const placement = focusActive
@@ -85,7 +96,7 @@ export default function ViewerGrid({ config }: { config: BoardConfig }) {
             ? "col-start-1 row-start-1 col-span-full row-span-full"
             : "hidden"
           : idx !== undefined
-            ? (PLACEMENT[layout][idx] ?? "hidden")
+            ? (PLACEMENT[effectiveLayout][idx] ?? "hidden")
             : "hidden";
 
         return (
@@ -95,7 +106,7 @@ export default function ViewerGrid({ config }: { config: BoardConfig }) {
               muted={slot.id !== audioSlot}
               label={slot.label}
               lead={!!slot.lead}
-              lowQuality={layout === 9}
+              lowQuality={effectiveLayout === 9}
               twId={`tw-viewer-${slot.id}`}
             />
           </div>

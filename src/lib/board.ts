@@ -112,17 +112,25 @@ export function boardReducer(
       return { ...state, slots: withSlot(state, action.id, { label: action.label }) };
 
     case "SET_LAYOUT": {
-      // If the audio slot falls outside the new layout it would keep sounding
-      // from a hidden cell on the viewer. Hand audio to the first visible
-      // populated slot instead. (Any populated slot within the first `layout`
-      // positions is also within the viewer's populated-slice view, so this
-      // rule is safe for both surfaces.)
-      const visible = state.slots.slice(0, action.layout);
+      // Compact first: populated slots pack to the front (order preserved,
+      // whole slot objects move so ids — and audio/focus/lead — travel with
+      // their stream, exactly like MOVE_SLOT). Without this, a board with a
+      // gap ([feed, empty, feed]) shrunk to 2-up would show the blank and cut
+      // off the third feed; compacted, the blank drops out and the feed slides
+      // up. The viewer reorders by pure CSS, so nothing reloads.
+      const slots = [
+        ...state.slots.filter((s) => s.source !== null),
+        ...state.slots.filter((s) => s.source === null),
+      ];
+      // If the audio slot still falls outside the new layout it would keep
+      // sounding from a hidden cell on the viewer. Hand audio to the first
+      // visible populated slot instead.
+      const visible = slots.slice(0, action.layout);
       let audioSlot = state.audioSlot;
       if (audioSlot !== null && !visible.some((s) => s.id === audioSlot)) {
         audioSlot = visible.find((s) => s.source !== null)?.id ?? null;
       }
-      return { ...state, layout: action.layout, audioSlot };
+      return { ...state, layout: action.layout, slots, audioSlot };
     }
 
     case "TOGGLE_FOCUS":
@@ -167,6 +175,19 @@ export function boardsEqual(a: BoardConfig, b: BoardConfig): boolean {
   return strip(a) === strip(b);
 }
 
+/**
+ * Smallest layout that fits `count` feeds. The viewer renders this instead of
+ * the chosen layout when feeds don't fill it (2 feeds on a 4-up board render
+ * 2-up), so removing streams never leaves empty grid cells. The chosen layout
+ * still caps how many feeds are visible — this only ever shrinks.
+ */
+export function fitLayout(count: number): BoardLayout {
+  for (const l of LAYOUTS) {
+    if (count <= l) return l;
+  }
+  return 9;
+}
+
 // --- tests (vitest) ---
 if (import.meta.vitest) {
   const { describe, it, expect } = import.meta.vitest;
@@ -209,6 +230,33 @@ if (import.meta.vitest) {
         label: "other",
       });
       expect(b.slots[0].lead).toBe(false);
+    });
+
+    it("SET_LAYOUT compacts gaps so populated slots pack to the front", () => {
+      let b = emptyBoard();
+      b = boardReducer(b, { type: "ADD_SOURCE", source: src, label: "a" });
+      b = boardReducer(b, { type: "ADD_SOURCE", source: src, label: "b" });
+      b = boardReducer(b, { type: "ADD_SOURCE", source: src, label: "c" });
+      b = boardReducer(b, { type: "TOGGLE_AUDIO", id: "slot-3" });
+      b = boardReducer(b, { type: "REMOVE_SLOT", id: "slot-2" }); // gap at position 2
+      b = boardReducer(b, { type: "SET_LAYOUT", layout: 2 });
+      // The blank dropped out and slot-3's stream slid up to position 2.
+      expect(b.slots[0].id).toBe("slot-1");
+      expect(b.slots[1].id).toBe("slot-3");
+      expect(b.slots[1].source).not.toBeNull();
+      expect(b.slots[2].source).toBeNull();
+      // Audio was on slot-3, which is visible after compaction — it stays.
+      expect(b.audioSlot).toBe("slot-3");
+    });
+
+    it("fitLayout picks the smallest layout that holds the feed count", () => {
+      expect(fitLayout(0)).toBe(1);
+      expect(fitLayout(1)).toBe(1);
+      expect(fitLayout(2)).toBe(2);
+      expect(fitLayout(3)).toBe(3);
+      expect(fitLayout(4)).toBe(4);
+      expect(fitLayout(5)).toBe(9);
+      expect(fitLayout(9)).toBe(9);
     });
 
     it("lead travels with the stream on MOVE_SLOT", () => {
