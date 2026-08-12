@@ -30,10 +30,12 @@ type Props = {
   position: number; // 1-based, for the corner number
   isFocused: boolean;
   isAudio: boolean;
+  isLead: boolean;
   onAddUrl: (url: string) => void;
   onLabel: (label: string) => void;
   onFocus: () => void;
   onAudio: () => void;
+  onLead: () => void;
   onRemove: () => void;
   onSwapFrom: (fromSlotId: string) => void; // another card dropped on this one
   onRosterDrop: (rosterKey: string) => void; // roster chip dropped on this card
@@ -44,10 +46,12 @@ export default function SlotCard({
   position,
   isFocused,
   isAudio,
+  isLead,
   onAddUrl,
   onLabel,
   onFocus,
   onAudio,
+  onLead,
   onRemove,
   onSwapFrom,
   onRosterDrop,
@@ -190,6 +194,18 @@ export default function SlotCard({
               ].join(" ")}
             >
               {isAudio ? "On air" : "Audio"}
+            </button>
+            <button
+              onClick={onLead}
+              title="Mark as race leader — crown on the viewer (any number can lead)"
+              className={[
+                "flex-1 px-2 py-1 text-[10px] font-display font-semibold uppercase tracking-[0.08em] rounded-[3px] border transition-colors",
+                isLead
+                  ? "border-[#FFD60A]/70 bg-[#FFD60A]/15 text-[#FFD60A] shadow-[inset_0_0_8px_rgba(255,214,10,0.18)]"
+                  : "border-line bg-panel2 text-dim hover:text-text hover:border-dim",
+              ].join(" ")}
+            >
+              Lead
             </button>
           </div>
         </>

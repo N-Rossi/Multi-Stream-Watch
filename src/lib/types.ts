@@ -32,6 +32,14 @@ export type TwitchVODSource = {
   live: false;
 };
 
+export type TwitchClipSource = {
+  type: "tw-clip";
+  platform: "tw";
+  clipId: string;
+  name: string;
+  live: false;
+};
+
 export type KickSource = {
   type: "kick-channel";
   platform: "kick";
@@ -87,6 +95,7 @@ export type Source =
   | YTChannelSource
   | TwitchChannelSource
   | TwitchVODSource
+  | TwitchClipSource
   | KickSource
   | BiliLiveSource
   | BiliVideoSource
@@ -116,6 +125,11 @@ export type BoardSlot = {
   id: string;
   source: Source | null;
   label: string; // racer / team name, shown as overlay on the viewer
+  // Race leader marker — crown on the viewer label. Any number of slots can
+  // lead at once (ties, team events), so it lives on the slot rather than as
+  // a single id on the board. Optional: boards persisted before this feature
+  // lack the field; absent = not leading.
+  lead?: boolean;
 };
 
 export type BoardConfig = {
@@ -124,6 +138,16 @@ export type BoardConfig = {
   slots: BoardSlot[]; // up to 9, ids slot-1..slot-9
   focusedSlot: string | null; // slot id shown 1-up on the viewer, or null for grid
   audioSlot: string | null; // slot id that has sound, or null for all muted
+};
+
+// ── Bookmarks (saved board states) ──────────────────────────────────────────
+// Whole-board snapshots the operator can name and recall with one click (like
+// switcher scene presets): build a board, save it, build another, then jump
+// back. Persisted in localStorage, global across rooms, capped at 10.
+
+export type BoardBookmark = {
+  name: string; // user-chosen, unique case-insensitively (re-save = update)
+  config: BoardConfig; // snapshot; version is meaningless here (stored as 0)
 };
 
 // ── Roster (control-page bookmark list) ─────────────────────────────────────

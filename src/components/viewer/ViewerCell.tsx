@@ -9,8 +9,9 @@ import {
   memo,
 } from "react";
 import type { Source } from "@/lib/types";
-import { buildEmbed } from "@/lib/buildEmbed";
+import { buildEmbed, rebuildEmbedSrc } from "@/lib/buildEmbed";
 import { PLATFORM_COLORS } from "@/lib/platform";
+import { useClipMp4 } from "@/hooks/useClipMp4";
 import {
   loadTwitchScript,
   getTwitchPlayer,
@@ -31,13 +32,15 @@ type Props = {
   source: Source;
   muted: boolean;
   label: string;
+  /** Race leader — yellow crown left of the name in the label strip. */
+  lead: boolean;
   /** At the 9-up layout, ask platforms for lower quality where possible. */
   lowQuality?: boolean;
   /** Stable DOM id for the Twitch.Player container (per slot). */
   twId: string;
 };
 
-function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
+function ViewerCellImpl({ source, muted, label, lead, lowQuality, twId }: Props) {
   const cellRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -45,7 +48,14 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
 
   const [coverScale, setCoverScale] = useState(1);
 
+  // Clips are NOT part of isTwitch: Twitch.Player's JS API doesn't support
+  // clips, so they skip the whole Player init / revive machinery. Preferred
+  // path is the clip's raw MP4 in a native <video> — the clips-embed iframe
+  // paints a "Click to unmute" pill over every muted autoplay that we cannot
+  // remove cross-origin. The embed is kept as fallback if resolution fails.
   const isTwitch = source.type === "tw-channel" || source.type === "tw-vod";
+  const isTwClip = source.type === "tw-clip";
+  const clip = useClipMp4(source.type === "tw-clip" ? source.clipId : null);
 
   // CRITICAL: every push delivers a freshly deserialized config, so `source` is
   // a new object reference even when its value is identical. Memoize on the
@@ -64,7 +74,52 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
     [srcKey] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
+  const reviveTimersRef = useRef<number[]>([]);
+
+  // Bumping this tears down and recreates the Twitch player (the init effect
+  // depends on it). A fresh player in a visible, unoccluded cell is the ONE
+  // start path proven to work everywhere adding a stream works — it is the
+  // revive of last resort.
+  const [twRebuild, setTwRebuild] = useState(0);
+
+  // Rebuild budget per source: a rebuild is a full stream reload, and a
+  // channel that is offline (or geo-blocked, or otherwise unplayable) will
+  // never reach PLAYING no matter how many times it is rebuilt — without a
+  // cap, the never-started watchdog would reload it forever. Two attempts,
+  // reset when the source changes or a player genuinely reaches PLAYING.
+  const rebuildBudgetRef = useRef(0);
+  useEffect(() => {
+    rebuildBudgetRef.current = 0;
+  }, [srcKey]);
+  const requestRebuild = useCallback(() => {
+    if (rebuildBudgetRef.current >= 2) return;
+    rebuildBudgetRef.current += 1;
+    // The rebuilt player must come back MUTED even if it holds the audio
+    // slot: unmuting a fresh player in a tab without activation is exactly
+    // the trap that killed its predecessor. The next audio toggle re-arms.
+    unmuteBlockedRef.current = true;
+    setTwRebuild((n) => n + 1);
+  }, []);
+  const requestRebuildRef = useRef(requestRebuild);
+  requestRebuildRef.current = requestRebuild;
+
   // Cover-scale: zoom the player to fill the cell (eliminates black bars).
+  //
+  // The observer ALSO drives revive-on-reveal (2026-08-04, the focus bug):
+  // Twitch pauses a started stream whenever its iframe stops being plainly
+  // visible — display:none (focus mode hides the other cells), occlusion, and
+  // the focus-resize itself can trip it — and a started-then-paused stream
+  // NEVER restarts on its own. Prevention is impossible: every way to make a
+  // cell invisible is something Twitch polices. So whenever this cell's
+  // geometry changes while visible (unfocus revealing it, focus resizing it,
+  // a layout switch), revive in two escalating steps:
+  //   1. +600ms  — applyMute(muted): its isPaused() → play() acts like a user
+  //      play-click and restores the right mute state. Cheap, seamless when it
+  //      works — but documented UNRELIABLE for these pauses.
+  //   2. +2600ms — if the player is STILL paused, rebuild it. Reloads the
+  //      stream (~2-3s of black) which beats a permanently frozen cell.
+  // Checks are event-driven (not a watchdog), so a deliberate pause via the
+  // player's own controls is only fought when the board changes shape.
   useLayoutEffect(() => {
     const el = cellRef.current;
     if (!el) return;
@@ -74,9 +129,59 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
       const ca = width / height;
       const va = 16 / 9;
       setCoverScale(ca > va ? ca / va : va / ca);
+
+      reviveTimersRef.current.forEach(clearTimeout);
+      // Escalation health check. isPaused() LIES for policy-stopped players
+      // (verified live 2026-08-04: big play button, frozen clock, and
+      // isPaused() === false — which is why every isPaused-gated revive
+      // silently did nothing). The player's CLOCK is the honest signal.
+      //
+      // TIMING MATTERS: a policy pause lands a few hundred ms AFTER the
+      // geometry change, so a baseline taken AT the change still records
+      // progress and reads as alive. Both samples are therefore taken after
+      // the death window and compared to each other.
+      let ta: number | undefined;
+      reviveTimersRef.current = [
+        window.setTimeout(() => {
+          const cell = cellRef.current;
+          if (!cell || cell.clientWidth === 0) return; // hidden again
+          applyMuteRef.current(mutedRef.current); // cheap attempt + reassert mute
+        }, 600),
+        window.setTimeout(() => {
+          try {
+            ta = twitchPlayerRef.current?.getCurrentTime?.();
+          } catch {
+            /* not ready */
+          }
+        }, 1500),
+        window.setTimeout(() => {
+          const cell = cellRef.current;
+          if (!cell || cell.clientWidth === 0) return; // hidden again — next reveal handles it
+          const p = twitchPlayerRef.current;
+          if (!p) return; // rebuild escalation is Twitch-only
+          let alive = false;
+          try {
+            const tb = p.getCurrentTime?.();
+            if (typeof ta === "number" && typeof tb === "number") {
+              alive = tb > ta + 0.05; // clock advanced across the sample window
+            } else {
+              // Embed build without getCurrentTime — trust isPaused, the best
+              // signal available there.
+              alive = p.isPaused() !== true;
+            }
+          } catch {
+            /* player torn down since */
+          }
+          if (!alive) requestRebuildRef.current();
+        }, 3800),
+      ];
     });
     obs.observe(el);
-    return () => obs.disconnect();
+    return () => {
+      obs.disconnect();
+      reviveTimersRef.current.forEach(clearTimeout);
+      reviveTimersRef.current = [];
+    };
   }, []);
 
   // A blocked unmute (no user gesture in this tab yet) pauses the player, and
@@ -100,16 +205,43 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
         const p = twitchPlayerRef.current;
         if (!p) return;
         try {
-          if (p.isPaused()) p.play();
+          // play() UNCONDITIONALLY — not gated on isPaused(), which LIES for
+          // policy-stopped players (verified live 2026-08-04: frozen on the
+          // big play button with isPaused() === false, which is why the old
+          // `if (p.isPaused()) p.play()` revive never fired). play() on an
+          // already-playing player is a no-op, on a spun-up-but-stopped one
+          // it acts like a user play-click, and the correct mute state is
+          // applied immediately after so it cannot sneak sound in.
+          p.play();
           if (!isMuted && unmuteBlockedRef.current) return; // stay muted-but-alive
           p.setMuted(isMuted);
           if (!isMuted) {
-            // If the unmute tripped the autoplay policy Twitch pauses the
-            // stream (and won't restart it on its own). Muted playback beats
-            // a frozen cell.
+            // The unmute trap: unmuting in a tab without user activation
+            // makes the browser pause the stream almost instantly (seen live:
+            // PLAYING → PAUSE 170ms after setMuted(false)). isPaused() lies
+            // here too, so judge by the CLOCK: if playback time hasn't
+            // advanced by the check, the unmute killed it — fall back to
+            // muted-but-alive. (A stream that happens to be buffering gets
+            // the same fallback; the next audio toggle retries.)
+            // TIMING MATTERS: the policy pause lands ~200ms AFTER the unmute,
+            // so a baseline taken now still sees ~0.2s of progress and reads
+            // as alive. Both samples must come from after the death window.
+            let ta: number | undefined;
             setTimeout(() => {
               try {
-                if (p.isPaused()) {
+                ta = p.getCurrentTime?.();
+              } catch {
+                /* torn down */
+              }
+            }, 1200);
+            setTimeout(() => {
+              try {
+                const tb = p.getCurrentTime?.();
+                const blocked =
+                  typeof ta === "number" && typeof tb === "number"
+                    ? tb <= ta + 0.05 // clock frozen across the sample window
+                    : p.isPaused() === true; // old embeds: best signal left
+                if (blocked) {
                   unmuteBlockedRef.current = true;
                   p.setMuted(true);
                   p.play();
@@ -117,11 +249,27 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
               } catch {
                 /* player torn down since */
               }
-            }, 800);
+            }, 2600);
           }
         } catch {
           /* player torn down mid-call */
         }
+        return;
+      }
+      if (source.type === "tw-clip" && iframeRef.current) {
+        // Embed-iframe FALLBACK only (MP4 resolution failed — the preferred
+        // path renders a native <video>, no iframe, and falls through to the
+        // video branch below). The embed has no runtime API at all — the only
+        // mute control is the src's muted param, so a toggle reloads the
+        // iframe (the clip restarts from the top; clips are short, so this
+        // beats no audio control). Identical src → no-op, so mount/onLoad
+        // re-applies and the revive timers never cause a spurious reload.
+        const src = rebuildEmbedSrc(source, {
+          muted: isMuted,
+          hostname: window.location.hostname,
+        });
+        const el = iframeRef.current;
+        if (el && src && el.src !== src) el.src = src;
         return;
       }
       if (source.type === "yt-video" || source.type === "yt-channel") {
@@ -172,7 +320,11 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
         }
       }, 400);
     },
-    [isTwitch, source.type]
+    // srcKey, not source: value-stable across cosmetic pushes (which deliver a
+    // fresh object), but changes when the source really changes — the clip
+    // branch closes over `source`, so swapping one clip for another must
+    // recreate this callback.
+    [isTwitch, srcKey] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // Refs so the Twitch PLAYING listener (bound once per player) always applies
@@ -188,7 +340,8 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
     applyMute(muted);
   }, [muted, applyMute]);
 
-  // Twitch: initialize Twitch.Player (re-runs only when the source changes).
+  // Twitch: initialize Twitch.Player (re-runs when the source changes, or
+  // when revive-on-reveal escalates to a rebuild via twRebuild).
   useEffect(() => {
     if (!isTwitch) {
       twitchPlayerRef.current = null;
@@ -196,6 +349,7 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
     }
     let cancelled = false;
     let stopInsisting: (() => void) | undefined;
+    let watchdog: number | undefined;
     loadTwitchScript()
       .then(() => {
         if (cancelled) return;
@@ -213,8 +367,70 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
         const player = new Player(twId, opts);
         if (!cancelled) twitchPlayerRef.current = player;
         stopInsisting = insistOnPlay(player);
+        let started = false;
+
+        // Never-started watchdog. A start that was vetoed at creation leaves
+        // a player that never fires PLAYING and never fires "pause" — no
+        // event-driven recovery can see it (verified live 2026-08-04:
+        // roster-drop into a Full-layout board, player loaded its poster and
+        // sat there). If PLAYING hasn't arrived after insistOnPlay's whole
+        // nag window and the cell is visible, rebuild (budgeted).
+        watchdog = window.setTimeout(() => {
+          if (cancelled || started) return;
+          const el = document.getElementById(twId);
+          if (!el || el.clientWidth === 0) return; // hidden — reveal handles it
+          requestRebuildRef.current();
+        }, 12000);
+
+        // Policy pauses (occlusion, unmute-without-activation) arrive as plain
+        // "pause" events, on THEIR schedule — observed anywhere from 170ms to
+        // 6s after the trigger, which is why timer-based detection kept
+        // missing them. Respond to the event itself: nothing in the viewer UI
+        // pauses a player deliberately, so any pause while this cell is
+        // visible is unwanted → fall back to muted playback, then VERIFY the
+        // revival actually took (the play() can itself be swallowed) and
+        // escalate to a budgeted rebuild if the clock stays frozen.
+        player.addEventListener("pause", () => {
+          if (cancelled) return;
+          const el = document.getElementById(twId);
+          if (!el || el.clientWidth === 0) return; // hidden cell — expected, leave it
+          unmuteBlockedRef.current = true;
+          setTimeout(() => {
+            try {
+              player.setMuted(true);
+              player.play();
+            } catch {
+              /* torn down since */
+            }
+          }, 250);
+          let ta: number | undefined;
+          setTimeout(() => {
+            try {
+              ta = player.getCurrentTime?.();
+            } catch {
+              /* torn down */
+            }
+          }, 1800);
+          setTimeout(() => {
+            if (cancelled) return;
+            const cell = document.getElementById(twId);
+            if (!cell || cell.clientWidth === 0) return;
+            try {
+              const tb = player.getCurrentTime?.();
+              const revived =
+                typeof ta === "number" && typeof tb === "number"
+                  ? tb > ta + 0.05
+                  : true; // no clock API — assume the play() took
+              if (!revived) requestRebuildRef.current();
+            } catch {
+              /* torn down since */
+            }
+          }, 3400);
+        });
         player.addEventListener(Player.PLAYING, () => {
           if (cancelled) return;
+          started = true;
+          rebuildBudgetRef.current = 0; // genuine playback: fresh budget
           stopInsisting?.();
           applyMuteRef.current(mutedRef.current);
           // 9-up is heavy; request a low quality where the platform allows it.
@@ -233,11 +449,12 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
     return () => {
       cancelled = true;
       stopInsisting?.();
+      if (watchdog !== undefined) clearTimeout(watchdog);
       twitchPlayerRef.current = null;
       const el = document.getElementById(twId);
       if (el) el.innerHTML = "";
     };
-  }, [embedConfig]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [embedConfig, twRebuild]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // HLS setup (re-runs only when the source changes).
   useEffect(() => {
@@ -282,12 +499,31 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
           <div className="absolute inset-0 w-full h-full">
             <div id={twId} style={{ width: "100%", height: "100%" }} />
           </div>
+        ) : isTwClip && !clip.failed ? (
+          /* Preferred clip path: raw MP4 in a native <video> — full mute
+             control, zero Twitch chrome (no "Click to unmute" pill). Black
+             while the URL resolves; on failure `clip.failed` flips and the
+             embed-iframe branch below takes over. */
+          clip.url ? (
+            <video
+              ref={videoRef}
+              className="absolute inset-0 w-full h-full object-contain bg-black"
+              autoPlay
+              muted
+              playsInline
+              onPlaying={() => applyMute(muted)}
+              src={clip.url}
+            />
+          ) : null
         ) : embedConfig.kind === "iframe" ? (
           <iframe
             ref={iframeRef}
             src={embedConfig.src}
             className="absolute inset-0 w-full h-full origin-center"
-            style={{ transform: `scale(${coverScale})` }}
+            /* Clips get NO cover-scale, same caution as the live player: it's
+               still a Twitch iframe, and inflating its geometry past the clip
+               box risks the same occlusion policing. It letterboxes on black. */
+            style={{ transform: isTwClip ? undefined : `scale(${coverScale})` }}
             allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
             allowFullScreen
             referrerPolicy="no-referrer-when-downgrade"
@@ -315,17 +551,44 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
 
       {/* Label strip — UMD look, but rendered BELOW the video box, never over
           it (occlusion vetoes Twitch autoplay). The audio slot gets a glowing
-          tally dot (shown even with no label). */}
-      {(label || !muted) && (
-        <div
-          className="h-6 shrink-0 flex items-center gap-2 bg-black border-l-[3px] pl-2 pr-2.5 text-xs font-display font-semibold uppercase tracking-wide text-white"
-          style={{
-            borderLeftColor:
-              source.type !== "invalid" && source.type !== "unsupported"
-                ? PLATFORM_COLORS[source.platform]
-                : "#8F8C83",
-          }}
-        >
+          tally dot, the race leader a crown (both shown even with no label).
+          ALWAYS rendered, even empty: the strip appearing/disappearing resizes
+          the video box, and Twitch pauses a playing stream on ANY iframe
+          resize (same policing as the focus-resize, see the ResizeObserver
+          comment above). Reserving the row permanently makes label / audio /
+          crown pushes pure paint changes the player never notices. */}
+      <div
+        className="h-6 shrink-0 flex items-center gap-2 bg-black border-l-[3px] pl-2 pr-2.5 text-xs font-display font-semibold uppercase tracking-wide text-white"
+        style={{
+          borderLeftColor:
+            source.type !== "invalid" && source.type !== "unsupported"
+              ? PLATFORM_COLORS[source.platform]
+              : "#8F8C83",
+        }}
+      >
+          {/* Crown — ALWAYS mounted, toggled via `visibility` only, and NO
+              glow filter. Two hard-won constraints:
+              1. drop-shadow/box-shadow paint beyond the element's box; from
+                 this strip a 4px glow reaches into the Twitch iframe above,
+                 and Twitch treats painted-over pixels as occlusion → it
+                 vetoes play() PERSISTENTLY while the glow exists (streams
+                 froze the moment the crown appeared, and stayed frozen).
+              2. Toggling via visibility instead of mount/unmount means a
+                 crown push mutates one style attribute — no node insertion,
+                 no layout shift — the same paint class as a label text edit,
+                 which pushes have always done safely. */}
+          <svg
+            viewBox="0 0 16 16"
+            className="w-3.5 h-3.5 shrink-0 text-[#FFD60A]"
+            style={{ visibility: lead ? "visible" : "hidden" }}
+            fill="currentColor"
+            aria-label={lead ? "Race leader" : undefined}
+            aria-hidden={lead ? undefined : true}
+          >
+            <title>Race leader</title>
+            <path d="M2 4.5 5 7l3-4 3 4 3-2.5L12.6 11H3.4L2 4.5Z" />
+            <rect x="3.4" y="12" width="9.2" height="1.6" rx="0.4" />
+          </svg>
           <span className="truncate">{label}</span>
           {!muted && (
             <span className="flex items-center gap-1.5 shrink-0" title="Audio live">
@@ -347,8 +610,7 @@ function ViewerCellImpl({ source, muted, label, lowQuality, twId }: Props) {
               <span className="w-1.5 h-1.5 rounded-[1px] bg-tally shadow-[0_0_6px_#FF453A]" />
             </span>
           )}
-        </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -361,6 +623,7 @@ const ViewerCell = memo(
   (a, b) =>
     a.muted === b.muted &&
     a.label === b.label &&
+    a.lead === b.lead &&
     a.lowQuality === b.lowQuality &&
     a.twId === b.twId &&
     JSON.stringify(a.source) === JSON.stringify(b.source)

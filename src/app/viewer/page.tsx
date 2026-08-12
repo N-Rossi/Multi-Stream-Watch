@@ -64,8 +64,17 @@ export default function ViewerPage() {
         </div>
       )}
 
-      {/* One-time local fullscreen control; hides once fullscreen. */}
-      {!isFullscreen && (
+      {/* One-time local fullscreen control — shown ONLY while the board is
+          empty. The moment content is up it must go: anything overlapping a
+          Twitch iframe vetoes fresh starts and pauses started streams, and
+          this button overlaps whichever cell owns the top-right corner in
+          EVERY layout — the single full-viewport cell at layout 1 (verified
+          live 2026-08-04: roster-drop into a Full board rendered a pure-black
+          never-created player until this button was hidden), the focused
+          cell, and the top-right cell of 2/3/4/9-up. Activation is not lost
+          by hiding it: any click anywhere in the window grants user
+          activation, and F toggles fullscreen at all times. */}
+      {!isFullscreen && !hasContent && (
         <button
           onClick={toggle}
           title="Fullscreen (F)"

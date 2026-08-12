@@ -1,8 +1,9 @@
 "use client";
 import { useRef, useEffect, useState, useCallback, useLayoutEffect } from "react";
 import type { Slot } from "@/lib/types";
-import { buildEmbed } from "@/lib/buildEmbed";
+import { buildEmbed, rebuildEmbedSrc } from "@/lib/buildEmbed";
 import { loadTwitchScript, getTwitchPlayer, insistOnPlay, type TwitchPlayerInstance } from "@/lib/twitch";
+import { useClipMp4 } from "@/hooks/useClipMp4";
 import { PLATFORM_COLORS } from "@/lib/platform";
 
 // ── Component ──────────────────────────────────────────────────────────────
@@ -47,7 +48,13 @@ export default function StreamCell({
 
   const muted = !isAudioSlot;
   const source = slot?.source;
+  // Clips are NOT isTwitch: Twitch.Player's JS API doesn't support clips.
+  // Preferred path is the clip's raw MP4 in a native <video> (the clips-embed
+  // iframe paints an unremovable "Click to unmute" pill on muted autoplay);
+  // the embed iframe is the fallback if MP4 resolution fails.
   const isTwitch = source?.type === "tw-channel" || source?.type === "tw-vod";
+  const isTwClip = source?.type === "tw-clip";
+  const clip = useClipMp4(source?.type === "tw-clip" ? source.clipId : null);
 
   // Cover-scale: zoom iframe/player to fill cell (eliminates black bars)
   useLayoutEffect(() => {
@@ -143,6 +150,17 @@ export default function StreamCell({
       return;
     }
 
+    // Twitch clips, embed-iframe FALLBACK only (MP4 resolution failed — the
+    // preferred path is a native <video>, handled by the video branch below).
+    // The embed has no runtime API — the only mute control is the src's muted
+    // param, so a toggle reloads the iframe (the clip restarts from the top;
+    // they're short). Identical src → no-op.
+    if (source.type === "tw-clip" && iframeRef.current) {
+      const src = rebuildEmbedSrc(source, { ...getEmbedOpts(), muted: isMuted });
+      if (src) setIframeSrc((prev) => (prev === src ? prev : src));
+      return;
+    }
+
     // YouTube: postMessage to running iframe (no reload)
     if (source.type === "yt-video" || source.type === "yt-channel") {
       iframeRef.current?.contentWindow?.postMessage(
@@ -167,7 +185,7 @@ export default function StreamCell({
     if (video) {
       video.muted = !isMuted && video.paused ? true : isMuted;
     }
-  }, [source, isTwitch]);
+  }, [source, isTwitch, getEmbedOpts]);
 
   useEffect(() => {
     applyMute(muted);
@@ -311,13 +329,31 @@ export default function StreamCell({
           <div className="absolute inset-0 w-full h-full">
             <div id={twContainerId} style={{ width: "100%", height: "100%" }} />
           </div>
+        ) : isTwClip && !clip.failed ? (
+          /* Preferred clip path: raw MP4 in a native <video> — full mute
+             control, no Twitch chrome ("Click to unmute" pill). Black while
+             resolving; on failure the embed-iframe branch below takes over. */
+          clip.url ? (
+            <video
+              ref={videoRef}
+              className="absolute inset-0 w-full h-full object-contain bg-black"
+              autoPlay
+              muted
+              playsInline
+              onPlaying={() => applyMute(muted)}
+              controls
+              src={clip.url}
+            />
+          ) : null
         ) : embedConfig?.kind === "iframe" ? (
           <>
             <iframe
               ref={iframeRef}
               src={iframeSrc || undefined}
               className="absolute inset-0 w-full h-full origin-center"
-              style={{ transform: `scale(${coverScale})` }}
+              /* Clips get NO cover-scale — still a Twitch iframe, same
+                 occlusion caution as the live player. Letterboxes on black. */
+              style={{ transform: isTwClip ? undefined : `scale(${coverScale})` }}
               allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
               allowFullScreen
               referrerPolicy="no-referrer-when-downgrade"

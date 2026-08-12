@@ -17,6 +17,10 @@ export function sourceKey(source: Source): string | null {
       return `tw:${source.channel.toLowerCase()}`;
     case "tw-vod":
       return `tw-vod:${source.videoId}`;
+    case "tw-clip":
+      // Clips are one-off moments, not streamers — deliberately not
+      // bookmarkable, so board adds never capture them into the roster.
+      return null;
     case "yt-video":
       return `yt:${source.videoId}`;
     case "yt-channel":

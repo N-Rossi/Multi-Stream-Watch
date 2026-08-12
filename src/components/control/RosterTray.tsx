@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { RosterEntry, Platform, Source } from "@/lib/types";
 import { PLATFORM_COLORS } from "@/lib/platform";
 import { DRAG_SLOT, DRAG_ROSTER } from "@/lib/roster";
@@ -23,6 +23,7 @@ type Props = {
   onPick: (key: string) => void; // click / no empty-slot-target drop → next empty slot
   onRemoveEntry: (key: string) => void;
   onSlotDropped: (slotId: string) => void; // card dragged into the tray → off the board
+  onClear: () => void; // wipe the whole roster (button is two-step confirmed)
 };
 
 export default function RosterTray({
@@ -32,10 +33,20 @@ export default function RosterTray({
   onPick,
   onRemoveEntry,
   onSlotDropped,
+  onClear,
 }: Props) {
   const [raw, setRaw] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  // Clear-all is two-step: first click arms, second click (within 3s) wipes.
+  // The roster persists across sessions, so one stray click must not be able
+  // to destroy a staged race lineup.
+  const [confirmClear, setConfirmClear] = useState(false);
+  useEffect(() => {
+    if (!confirmClear) return;
+    const t = setTimeout(() => setConfirmClear(false), 3000);
+    return () => clearTimeout(t);
+  }, [confirmClear]);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,6 +109,27 @@ export default function RosterTray({
             : error ??
               "Click a chip to fill the next slot, or drag it onto a specific slot. Drag a slot card down here to clear it."}
         </span>
+        {roster.length > 0 && (
+          <button
+            onClick={() => {
+              if (!confirmClear) {
+                setConfirmClear(true);
+                return;
+              }
+              setConfirmClear(false);
+              onClear();
+            }}
+            title="Remove every saved streamer from the roster"
+            className={[
+              "ml-auto shrink-0 px-2.5 py-1 text-[11px] font-display font-semibold uppercase tracking-[0.08em] rounded-[3px] border transition-colors",
+              confirmClear
+                ? "border-tally/70 bg-tally/10 text-tally"
+                : "border-line bg-panel2 text-dim hover:text-tally hover:border-tally/70",
+            ].join(" ")}
+          >
+            {confirmClear ? "Are you sure?" : "Clear all"}
+          </button>
+        )}
       </div>
 
       {roster.length > 0 && (
