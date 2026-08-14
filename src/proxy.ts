@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { parseSiteUsers, checkBasicAuth } from "@/lib/siteAuth";
 
-// Site-wide password gate (HTTP Basic Auth), enforced at the edge before any
+// Site-wide login gate (HTTP Basic Auth), enforced at the edge before any
 // page renders.
 //
 // What this does and does not protect: the board itself CANNOT be tampered
@@ -11,32 +12,28 @@ import type { NextRequest } from "next/server";
 // deployment DOES give strangers is free use of the app on this project's
 // Vercel bandwidth, plus noise in its analytics. This gate closes that.
 //
-// Behaviour:
-// - SITE_PASSWORD unset (local dev by default) → the site is open.
-// - Set (production) → every page asks the browser for credentials once;
-//   the username is ignored, only the password must match. Browsers cache
-//   the credentials for the session, so the prompt appears once per visit
-//   at most — and the Twitch OAuth round-trip re-enters with the cached
-//   credentials without prompting again.
+// Accounts (see lib/siteAuth.ts for the format):
+// - SITE_USERS="client:password" — named accounts; add more people later by
+//   appending comma-separated pairs, no code change needed.
+// - SITE_PASSWORD=... — legacy fallback used only when SITE_USERS is unset:
+//   any username, one shared password.
+// - Neither set (local dev by default) → the site is open.
 //
-// SITE_PASSWORD is a server-side env var (no NEXT_PUBLIC_ prefix), so it is
+// The browser asks for credentials once and caches them for the session, so
+// the prompt appears at most once per visit — and the Twitch OAuth round-trip
+// re-enters with the cached credentials without prompting again.
+//
+// Both env vars are server-side (no NEXT_PUBLIC_ prefix), so credentials are
 // never baked into the client bundle.
 
 export function proxy(request: NextRequest) {
-  const password = process.env.SITE_PASSWORD;
-  if (!password) return NextResponse.next();
+  const users = parseSiteUsers(process.env.SITE_USERS);
+  const legacyPassword = process.env.SITE_PASSWORD;
+  if (users.size === 0 && !legacyPassword) return NextResponse.next();
 
-  const header = request.headers.get("authorization") ?? "";
-  if (header.startsWith("Basic ")) {
-    try {
-      const decoded = atob(header.slice(6));
-      // "user:pass" — everything after the first colon is the password, so
-      // passwords containing colons survive.
-      const supplied = decoded.slice(decoded.indexOf(":") + 1);
-      if (supplied === password) return NextResponse.next();
-    } catch {
-      /* malformed base64 — fall through to the challenge */
-    }
+  const header = request.headers.get("authorization");
+  if (checkBasicAuth(header, users, legacyPassword)) {
+    return NextResponse.next();
   }
 
   return new NextResponse("Authentication required.", {
