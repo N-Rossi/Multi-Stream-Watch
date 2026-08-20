@@ -133,11 +133,17 @@ export function boardReducer(
       return { ...state, layout: action.layout, slots, audioSlot };
     }
 
-    case "TOGGLE_FOCUS":
+    case "TOGGLE_FOCUS": {
+      const focusing = state.focusedSlot !== action.id;
       return {
         ...state,
-        focusedSlot: state.focusedSlot === action.id ? null : action.id,
+        focusedSlot: focusing ? action.id : null,
+        // Focusing means "watch this one" — bring the sound along in the same
+        // take. Unfocusing leaves audio where it is (no snap-back); the Audio
+        // button still overrides freely afterwards.
+        audioSlot: focusing ? action.id : state.audioSlot,
       };
+    }
 
     case "TOGGLE_AUDIO":
       return {
@@ -267,6 +273,30 @@ if (import.meta.vitest) {
       // The whole slot object (id + lead) moved to position 1.
       expect(b.slots[1].id).toBe("slot-1");
       expect(b.slots[1].lead).toBe(true);
+    });
+  });
+
+  describe("boardReducer TOGGLE_FOCUS", () => {
+    it("brings audio along when focusing, keeps it on unfocus", () => {
+      let b = emptyBoard();
+      b = boardReducer(b, { type: "ADD_SOURCE", source: src, label: "a" }); // audio -> slot-1
+      b = boardReducer(b, { type: "ADD_SOURCE", source: src, label: "b" });
+      b = boardReducer(b, { type: "TOGGLE_FOCUS", id: "slot-2" });
+      expect(b.focusedSlot).toBe("slot-2");
+      expect(b.audioSlot).toBe("slot-2"); // focus moved the sound too
+      b = boardReducer(b, { type: "TOGGLE_FOCUS", id: "slot-2" }); // unfocus
+      expect(b.focusedSlot).toBe(null);
+      expect(b.audioSlot).toBe("slot-2"); // no snap-back
+    });
+
+    it("still allows overriding audio after focusing", () => {
+      let b = emptyBoard();
+      b = boardReducer(b, { type: "ADD_SOURCE", source: src, label: "a" });
+      b = boardReducer(b, { type: "ADD_SOURCE", source: src, label: "b" });
+      b = boardReducer(b, { type: "TOGGLE_FOCUS", id: "slot-2" });
+      b = boardReducer(b, { type: "TOGGLE_AUDIO", id: "slot-1" });
+      expect(b.focusedSlot).toBe("slot-2");
+      expect(b.audioSlot).toBe("slot-1");
     });
   });
 }
