@@ -56,7 +56,14 @@ const PLACEMENT: Record<BoardLayout, string[]> = {
   ],
 };
 
-export default function ViewerGrid({ config }: { config: BoardConfig }) {
+export default function ViewerGrid({
+  config,
+  twitchToken,
+}: {
+  config: BoardConfig;
+  /** Passed through to each Twitch cell for best-effort ad-free playback. */
+  twitchToken: string | null;
+}) {
   const { layout, slots, focusedSlot, audioSlot } = config;
 
   const populated = slots.filter((s) => s.source !== null);
@@ -108,6 +115,7 @@ export default function ViewerGrid({ config }: { config: BoardConfig }) {
               lead={!!slot.lead}
               lowQuality={effectiveLayout === 9}
               twId={`tw-viewer-${slot.id}`}
+              twitchToken={twitchToken}
             />
           </div>
         );

@@ -16,6 +16,8 @@ import {
   loadTwitchScript,
   getTwitchPlayer,
   insistOnPlay,
+  pickSourceQuality,
+  pickLowestQuality,
   type TwitchPlayerInstance,
 } from "@/lib/twitch";
 
@@ -38,9 +40,22 @@ type Props = {
   lowQuality?: boolean;
   /** Stable DOM id for the Twitch.Player container (per slot). */
   twId: string;
+  /** Twitch OAuth token (login happens on control/home; shared localStorage
+      brings it here). Passed to Twitch.Player so Turbo / channel-sub accounts
+      get their ad-free entitlement inside the embeds. `oauth_token` is not a
+      documented player option — treat it as best effort, never a guarantee. */
+  twitchToken: string | null;
 };
 
-function ViewerCellImpl({ source, muted, label, lead, lowQuality, twId }: Props) {
+function ViewerCellImpl({
+  source,
+  muted,
+  label,
+  lead,
+  lowQuality,
+  twId,
+  twitchToken,
+}: Props) {
   const cellRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -231,16 +246,17 @@ function ViewerCellImpl({ source, muted, label, lead, lowQuality, twId }: Props)
             } catch {
               /* older embed build */
             }
-            // The unmute trap: unmuting in a tab without user activation
-            // makes the browser pause the stream almost instantly (seen live:
-            // PLAYING → PAUSE 170ms after setMuted(false)). isPaused() lies
-            // here too, so judge by the CLOCK: if playback time hasn't
-            // advanced by the check, the unmute killed it — fall back to
-            // muted-but-alive. (A stream that happens to be buffering gets
-            // the same fallback; the next audio toggle retries.)
-            // TIMING MATTERS: the policy pause lands ~200ms AFTER the unmute,
-            // so a baseline taken now still sees ~0.2s of progress and reads
-            // as alive. Both samples must come from after the death window.
+            // Safety net for the unmute trap: unmuting without user
+            // activation kills playback ~200ms later (seen live: PLAYING →
+            // PAUSE 170ms after setMuted(false)). The authoritative signal is
+            // the PLAYBACK_BLOCKED event (which sets the latch); this clock
+            // check only REVIVES a stream the unmute killed, in case that
+            // event doesn't fire on some embed build. It deliberately does
+            // NOT latch: a frozen clock can also just mean an ad break, and
+            // latching on that false positive is the bug that used to kill
+            // audio permanently (2026-08-08).
+            // TIMING MATTERS: both samples come from after the ~200ms death
+            // window, else the pre-death progress reads as alive.
             let ta: number | undefined;
             setTimeout(() => {
               try {
@@ -250,14 +266,14 @@ function ViewerCellImpl({ source, muted, label, lead, lowQuality, twId }: Props)
               }
             }, 1200);
             setTimeout(() => {
+              if (twitchPlayerRef.current !== p) return; // replaced — not ours to touch
               try {
                 const tb = p.getCurrentTime?.();
-                const blocked =
+                const dead =
                   typeof ta === "number" && typeof tb === "number"
                     ? tb <= ta + 0.05 // clock frozen across the sample window
                     : p.isPaused() === true; // old embeds: best signal left
-                if (blocked) {
-                  unmuteBlockedRef.current = true;
+                if (dead) {
                   p.setMuted(true);
                   p.play();
                 }
@@ -377,6 +393,11 @@ function ViewerCellImpl({ source, muted, label, lead, lowQuality, twId }: Props)
           autoplay: true,
           muted: true,
           parent: [window.location.hostname],
+          // Same best-effort ad-free path the home board uses. The token
+          // arrives asynchronously after mount (localStorage + a validation
+          // fetch), so the first players of a session are created without it
+          // and rebuilt once when it lands — the effect depends on it below.
+          ...(twitchToken ? { oauth_token: twitchToken } : {}),
         };
         if (source.type === "tw-channel") opts.channel = source.channel;
         if (source.type === "tw-vod") opts.video = source.videoId;
@@ -392,7 +413,29 @@ function ViewerCellImpl({ source, muted, label, lead, lowQuality, twId }: Props)
         };
         (dbg.__mswPlayers ??= {})[twId] = player;
         stopInsisting = insistOnPlay(player);
+
+        // PLAYBACK_BLOCKED is Twitch's explicit "the browser rejected this
+        // play/unmute" event — the AUTHORITATIVE policy-block signal. It is
+        // the ONLY place the unmute latch is set now; the old clock-based
+        // inference latched on false positives (sampling during an ad break
+        // reads as a frozen clock), which is how audio kept dying
+        // permanently. Guarded so a torn-down player can't latch state that
+        // now belongs to its replacement.
+        player.addEventListener(Player.PLAYBACK_BLOCKED ?? "playbackBlocked", () => {
+          if (cancelled || twitchPlayerRef.current !== player) return;
+          unmuteBlockedRef.current = true;
+          setTimeout(() => {
+            try {
+              if (twitchPlayerRef.current !== player) return;
+              player.setMuted(true);
+              player.play(); // muted-but-alive beats frozen
+            } catch {
+              /* torn down since */
+            }
+          }, 250);
+        });
         let started = false;
+        let qualityApplied = false; // once per player — see the PLAYING listener
 
         // Never-started watchdog. A start that was vetoed at creation leaves
         // a player that never fires PLAYING and never fires "pause" — no
@@ -474,9 +517,64 @@ function ViewerCellImpl({ source, muted, label, lead, lowQuality, twId }: Props)
         player.addEventListener(Player.PLAYING, () => {
           if (cancelled) return;
           started = true;
-          rebuildBudgetRef.current = 0; // genuine playback: fresh budget
+          // Refill the rebuild budget only after playback SUSTAINS. A brief
+          // PLAYING flicker before another death must not refill it — when
+          // the environment refuses playback outright (seen 2026-08-11:
+          // Twitch declining autoplay for parent=localhost embeds while the
+          // same player on the production origin played fine), an instant
+          // refill turns the capped rebuild into an endless visible
+          // reload loop.
+          {
+            const t0 = player.getCurrentTime?.();
+            setTimeout(() => {
+              if (cancelled || twitchPlayerRef.current !== player) return;
+              try {
+                const t1 = player.getCurrentTime?.();
+                if (
+                  typeof t0 === "number" &&
+                  typeof t1 === "number" &&
+                  t1 > t0 + 5
+                ) {
+                  rebuildBudgetRef.current = 0; // 5s+ of real playback
+                }
+              } catch {
+                /* torn down since */
+              }
+            }, 8000);
+          }
           stopInsisting?.();
           applyMuteRef.current(mutedRef.current);
+          // Quality policy, chosen from what THIS stream actually offers (a
+          // hardcoded id may not exist on a given stream):
+          //  - up to 4 feeds: Source ("chunked" passthrough, else the highest
+          //    rendition offered);
+          //  - 9-up: the lightest real rendition — nine source-quality
+          //    decodes would bury the machine's bandwidth and GPU.
+          //
+          // APPLIED AT MOST ONCE PER PLAYER. A quality switch RESTARTS the
+          // stream, which fires PLAYING again — setting it on every PLAYING
+          // created an infinite pause/reload loop that took the whole board
+          // down (found live 2026-08-11, mid-race). Skipped entirely when the
+          // player already reports the wanted group. Reconnect resets are
+          // covered well enough by rebuilds creating fresh players.
+          if (!qualityApplied) {
+            try {
+              const offered = player.getQualities?.() ?? [];
+              const want = lowQuality
+                ? pickLowestQuality(offered)
+                : pickSourceQuality(offered);
+              if (want && player.getQuality?.() !== want) {
+                qualityApplied = true;
+                player.setQuality(want);
+              } else if (!want && lowQuality) {
+                // getQualities missing on this embed build — legacy best effort.
+                qualityApplied = true;
+                player.setQuality("160p");
+              }
+            } catch {
+              /* quality control is best effort, never worth breaking playback */
+            }
+          }
           // A rebuilt player comes back latched-muted for safety. Don't leave
           // the audio slot silent until someone notices and toggles: once
           // playback is confirmed, retry the true state (budgeted — a genuine
@@ -493,14 +591,6 @@ function ViewerCellImpl({ source, muted, label, lead, lowQuality, twId }: Props)
               unmuteBlockedRef.current = false;
               applyMuteRef.current(mutedRef.current);
             }, 3000);
-          }
-          // 9-up is heavy; request a low quality where the platform allows it.
-          if (lowQuality) {
-            try {
-              player.setQuality("160p");
-            } catch {
-              /* quality id varies by stream — best effort */
-            }
           }
         });
       })
@@ -519,7 +609,7 @@ function ViewerCellImpl({ source, muted, label, lead, lowQuality, twId }: Props)
       const el = document.getElementById(twId);
       if (el) el.innerHTML = "";
     };
-  }, [embedConfig, twRebuild]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [embedConfig, twRebuild, twitchToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // HLS setup (re-runs only when the source changes).
   useEffect(() => {
@@ -691,6 +781,7 @@ const ViewerCell = memo(
     a.lead === b.lead &&
     a.lowQuality === b.lowQuality &&
     a.twId === b.twId &&
+    a.twitchToken === b.twitchToken &&
     JSON.stringify(a.source) === JSON.stringify(b.source)
 );
 export default ViewerCell;

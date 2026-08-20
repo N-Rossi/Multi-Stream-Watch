@@ -19,6 +19,10 @@ export function buildEmbed(
         autoplay: "1",
         mute: muted ? "1" : "0",
         playsinline: "1",
+        // Captions off by default — burned-in captions on a race board are
+        // noise. YouTube may still honor a viewer's saved caption preference;
+        // this only sets the default.
+        cc_load_policy: "0",
         origin,
       });
       return {
@@ -34,6 +38,7 @@ export function buildEmbed(
         enablejsapi: "1",
         autoplay: "1",
         mute: muted ? "1" : "0",
+        cc_load_policy: "0", // captions off by default (see yt-video)
       });
       return {
         kind: "iframe",

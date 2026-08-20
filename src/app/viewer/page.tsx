@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { BoardConfig } from "@/lib/types";
 import { createSync } from "@/lib/sync";
 import { useFullscreen } from "@/hooks/useFullscreen";
+import { useTwitchAuth } from "@/hooks/useTwitchAuth";
 import ViewerGrid from "@/components/viewer/ViewerGrid";
 
 // Clean program output. Renders only the published board. Open this in a second
@@ -15,6 +16,12 @@ export default function ViewerPage() {
   const [ready, setReady] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const { isFullscreen, toggle } = useFullscreen(rootRef);
+  // Twitch login happens on control or the home board; the token lands in
+  // shared localStorage and this hook picks it up, so Turbo / sub accounts
+  // get their ad-free entitlement in the viewer's players too. It resolves
+  // asynchronously (validation fetch), so Twitch cells created before it
+  // arrives rebuild once when it does.
+  const { token: twitchToken } = useTwitchAuth();
 
   useEffect(() => {
     const room =
@@ -54,7 +61,7 @@ export default function ViewerPage() {
       className="relative w-screen h-screen bg-black overflow-hidden"
     >
       {hasContent ? (
-        <ViewerGrid config={published!} />
+        <ViewerGrid config={published!} twitchToken={twitchToken} />
       ) : (
         <div className="w-full h-full flex flex-col items-center justify-center gap-3 select-none">
           <span className="w-2 h-2 rounded-[1px] bg-panel2 border border-line" />
