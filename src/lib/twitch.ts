@@ -18,6 +18,13 @@ export interface TwitchPlayerInstance {
       clock advances, a dead player's does not. Optional — older embed builds
       may lack it. */
   getCurrentTime?(): number;
+  /** 0..1. WARNING: player.twitch.tv PERSISTS volume in its own localStorage,
+      shared by every Twitch embed in the browser — one slider dragged to 0
+      (or a stray click) silences ALL embeds everywhere, and setMuted(false)
+      does nothing about it. Check getVolume on unmute. Optional — older
+      embed builds may lack them. */
+  getVolume?(): number;
+  setVolume?(volume: number): void;
   addEventListener(event: string, cb: () => void): void;
 }
 

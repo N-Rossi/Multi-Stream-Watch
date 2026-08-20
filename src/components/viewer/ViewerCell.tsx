@@ -88,8 +88,14 @@ function ViewerCellImpl({ source, muted, label, lead, lowQuality, twId }: Props)
   // cap, the never-started watchdog would reload it forever. Two attempts,
   // reset when the source changes or a player genuinely reaches PLAYING.
   const rebuildBudgetRef = useRef(0);
+  // How many times PLAYING may auto-clear a latched mute-block (see the
+  // PLAYING listener). Budgeted so an activation-less tab can't loop
+  // unmute → policy-pause → revive forever; reset on source change and on
+  // every explicit audio toggle.
+  const unblockRetriesRef = useRef(0);
   useEffect(() => {
     rebuildBudgetRef.current = 0;
+    unblockRetriesRef.current = 0;
   }, [srcKey]);
   const requestRebuild = useCallback(() => {
     if (rebuildBudgetRef.current >= 2) return;
@@ -216,6 +222,15 @@ function ViewerCellImpl({ source, muted, label, lead, lowQuality, twId }: Props)
           if (!isMuted && unmuteBlockedRef.current) return; // stay muted-but-alive
           p.setMuted(isMuted);
           if (!isMuted) {
+            // Unmuted but volume 0 is still silence — and the embed PERSISTS
+            // volume in player.twitch.tv localStorage, shared by every Twitch
+            // embed in this browser. One zeroed slider would otherwise mute
+            // every cell forever, immune to every toggle.
+            try {
+              if (p.getVolume?.() === 0) p.setVolume?.(1);
+            } catch {
+              /* older embed build */
+            }
             // The unmute trap: unmuting in a tab without user activation
             // makes the browser pause the stream almost instantly (seen live:
             // PLAYING → PAUSE 170ms after setMuted(false)). isPaused() lies
@@ -337,6 +352,7 @@ function ViewerCellImpl({ source, muted, label, lead, lowQuality, twId }: Props)
 
   useEffect(() => {
     unmuteBlockedRef.current = false; // each audio toggle earns a fresh attempt
+    unblockRetriesRef.current = 0;
     applyMute(muted);
   }, [muted, applyMute]);
 
@@ -366,6 +382,15 @@ function ViewerCellImpl({ source, muted, label, lead, lowQuality, twId }: Props)
         if (source.type === "tw-vod") opts.video = source.videoId;
         const player = new Player(twId, opts);
         if (!cancelled) twitchPlayerRef.current = player;
+        // Live-debug handle: audio is invisible to screenshots and logs, so
+        // when someone reports "no sound" the ONLY way to see the truth is to
+        // ask the players directly. From the viewer tab's console:
+        //   Object.entries(__mswPlayers).map(([id, p]) =>
+        //     `${id} muted=${p.getMuted()} vol=${p.getVolume?.()} t=${p.getCurrentTime?.()}`)
+        const dbg = window as unknown as {
+          __mswPlayers?: Record<string, TwitchPlayerInstance>;
+        };
+        (dbg.__mswPlayers ??= {})[twId] = player;
         stopInsisting = insistOnPlay(player);
         let started = false;
 
@@ -394,7 +419,7 @@ function ViewerCellImpl({ source, muted, label, lead, lowQuality, twId }: Props)
           if (cancelled) return;
           const el = document.getElementById(twId);
           if (!el || el.clientWidth === 0) return; // hidden cell — expected, leave it
-          unmuteBlockedRef.current = true;
+          // Safety first: revive muted so the picture never freezes...
           setTimeout(() => {
             try {
               player.setMuted(true);
@@ -403,6 +428,25 @@ function ViewerCellImpl({ source, muted, label, lead, lowQuality, twId }: Props)
               /* torn down since */
             }
           }, 250);
+          // ...but do NOT latch unmuteBlocked here. Twitch fires "pause" at
+          // every AD BOUNDARY, so latching turned each ad break into
+          // permanently dead audio (reported live 2026-08-08: after enough
+          // watch time no toggle could restore sound on any Twitch stream —
+          // the next boundary, or the retry's clock check sampling mid-ad,
+          // kept re-latching). Instead, restore the TRUE mute state once the
+          // interruption settles. If that unmute genuinely trips the
+          // activation policy, applyMute's own clock check latches — the
+          // latch is reserved for real policy blocks.
+          setTimeout(() => {
+            if (cancelled) return;
+            const cell = document.getElementById(twId);
+            if (!cell || cell.clientWidth === 0) return;
+            try {
+              applyMuteRef.current(mutedRef.current);
+            } catch {
+              /* torn down since */
+            }
+          }, 2800);
           let ta: number | undefined;
           setTimeout(() => {
             try {
@@ -433,6 +477,23 @@ function ViewerCellImpl({ source, muted, label, lead, lowQuality, twId }: Props)
           rebuildBudgetRef.current = 0; // genuine playback: fresh budget
           stopInsisting?.();
           applyMuteRef.current(mutedRef.current);
+          // A rebuilt player comes back latched-muted for safety. Don't leave
+          // the audio slot silent until someone notices and toggles: once
+          // playback is confirmed, retry the true state (budgeted — a genuine
+          // policy block re-latches via applyMute's clock check, and after
+          // two failures we stop and wait for a manual toggle).
+          if (
+            unmuteBlockedRef.current &&
+            !mutedRef.current &&
+            unblockRetriesRef.current < 2
+          ) {
+            unblockRetriesRef.current += 1;
+            setTimeout(() => {
+              if (cancelled) return;
+              unmuteBlockedRef.current = false;
+              applyMuteRef.current(mutedRef.current);
+            }, 3000);
+          }
           // 9-up is heavy; request a low quality where the platform allows it.
           if (lowQuality) {
             try {
@@ -451,6 +512,10 @@ function ViewerCellImpl({ source, muted, label, lead, lowQuality, twId }: Props)
       stopInsisting?.();
       if (watchdog !== undefined) clearTimeout(watchdog);
       twitchPlayerRef.current = null;
+      const dbg = window as unknown as {
+        __mswPlayers?: Record<string, TwitchPlayerInstance>;
+      };
+      delete dbg.__mswPlayers?.[twId];
       const el = document.getElementById(twId);
       if (el) el.innerHTML = "";
     };
